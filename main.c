@@ -123,6 +123,9 @@ void setup() {
 	UBRR0H = 0x00;			  // Baudrate: 9600
 	UBRR0L = 0x67;
 	
+	DDRE &= ~(1 << DDE0);
+	DDRE |= (1 << DDE1);
+
 	/*
 	 * Serial 1
 	 */
@@ -135,8 +138,8 @@ void setup() {
 	UBRR1H = 0x00;		      // Baudrate: 9600
 	UBRR1L = 0x67;
 
-	DDRE &= ~(1 << DDE0);
-	DDRE |= (1 << DDE1);
+	DDRD &= ~(1 << DDD2);
+	DDRD |= (1 << DDD3);
 
 	/*
 	 * External Interrupts
@@ -144,31 +147,31 @@ void setup() {
 	EICRA |= (1 << ISC00) | // Ext.Int 0 w rising edge
 			 (1 << ISC01) |
 			 (1 << ISC10) | // Ext.Int 1 w rising edge
-			 (1 << ISC11) |
-			 (1 << ISC20) | // Ext.Int 2 w rising edge
-			 (1 << ISC21) |
-			 (1 << ISC30) | // Ext.Int 3 w rising edge
-			 (1 << ISC31);
+			 (1 << ISC11);
 	EICRB |= (1 << ISC40) | // Ext.Int 4 w rising edge
 			 (1 << ISC41) |
 			 (1 << ISC50) | // Ext.Int 5 w rising edge
-			 (1 << ISC51);
+			 (1 << ISC51) |
+			 (1 << ISC60) | // Ext.Int 6 w rising edge
+			 (1 << ISC61) |
+			 (1 << ISC70) | // Ext.Int 7 w rising edge
+			 (1 << ISC71);
 
 	DDRD &= ~(1 << DDD0) |
-			~(1 << DDD1) |
-			~(1 << DDD2) |
-			~(1 << DDD3);
+			~(1 << DDD1);
 	DDRE &= ~(1 << DDE4) |
-			~(1 << DDE5);
+			~(1 << DDE5) |
+			~(1 << DDE6) |
+			~(1 << DDE7);
+
 
 	// Grant individual external interrupts
-	
 	EIMSK |= (1 << INT0) |
 			 (1 << INT1) |
-			 (1 << INT2) |
-			 (1 << INT3) |
 			 (1 << INT4) |
-			 (1 << INT5);
+			 (1 << INT5) |
+			 (1 << INT6) |
+			 (1 << INT7);
 }
 
 int main() {
@@ -219,7 +222,7 @@ int main() {
 				}
 			}
 		}
-		//serialEvent();
+		serialEvent();
 		//serialEvent1();
 	}
 
@@ -227,16 +230,12 @@ int main() {
 }
 
 void serialEvent() {
-	char ch;
-
 	if(FLAG_SerialReceived[0]) {
 		FLAG_SerialReceived[0] = false;
 
-		ch = usartRxCharCh0();
-
-		switch(ch) {
+		switch(SerialChar[0]) {
 		default:
-			printf("%c", ch);
+			printf("%c", SerialChar[0]);
 			break;
 		}
 	}
@@ -272,7 +271,7 @@ ISR(TIMER2_OVF_vect) {
 ISR(USART0_RX_vect) {
 	FLAG_SerialReceived[0] = true;
 
-	printf("CHAR Received!!\r\n");
+	SerialChar[0] = usartRxCharCh0();
 }
 
 /**
@@ -287,13 +286,6 @@ ISR(USART0_UDRE_vect) {
  */
  ISR(USART1_RX_vect) {
 	 FLAG_SerialReceived[1] = true;
- }
- 
- /**
-  * @brief USART1 data register empty ISR
-  */
- ISR(USART1_UDRE_vect) {
-	 
  }
  
 /**
@@ -347,62 +339,12 @@ ISR(INT1_vect) {
 }
 
 /**
- * @brief External interrupt 2 ISR
- */
-ISR(INT2_vect) {
-	//printf("Ext Interrupt 2!!!\r\n");
-	
-	const uint8_t index = 2;
-
-	if(!FLAG_ExtIntRisingEdge[index]) {
-		FLAG_ExtIntRisingEdge[index] = true;
-		
-		ExtIntRisingTCNT1[index] = TCNT1;
-		// 센싱 모드 Rising edge > Falling edge
-		EICRA &= ~(1 << ISC20);
-		} else {
-		FLAG_ExtIntRisingEdge[index] = false;
-		
-		ExtIntFallingTCNT1[index] = TCNT1;
-		// 센싱 모드 Falling edge > Rising edge
-		EICRA |= (1 << ISC20);
-		
-		FLAG_ExtIntReceivedPWM[index] = true;
-	}
-}
-
-/**
- * @brief External interrupt 3 ISR
- */
-ISR(INT3_vect) {
-	//printf("Ext Interrupt 3!!!\r\n");
-	
-	const uint8_t index = 3;
-
-	if(!FLAG_ExtIntRisingEdge[index]) {
-		FLAG_ExtIntRisingEdge[index] = true;
-		
-		ExtIntRisingTCNT1[index] = TCNT1;
-		// 센싱 모드 Rising edge > Falling edge
-		EICRA &= ~(1 << ISC30);
-		} else {
-		FLAG_ExtIntRisingEdge[index] = false;
-		
-		ExtIntFallingTCNT1[index] = TCNT1;
-		// 센싱 모드 Falling edge > Rising edge
-		EICRA |= (1 << ISC30);
-		
-		FLAG_ExtIntReceivedPWM[index] = true;
-	}
-}
-
-/**
  * @brief External interrupt 4 ISR
  */
 ISR(INT4_vect) {
 	//printf("Ext Interrupt 4!!!\r\n");
 	
-	const uint8_t index = 4;
+	const uint8_t index = 2;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
 		FLAG_ExtIntRisingEdge[index] = true;
@@ -427,7 +369,7 @@ ISR(INT4_vect) {
 ISR(INT5_vect) {
 	//printf("Ext Interrupt 5!!!\r\n");
 	
-	const uint8_t index = 5;
+	const uint8_t index = 3;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
 		FLAG_ExtIntRisingEdge[index] = true;
@@ -447,11 +389,64 @@ ISR(INT5_vect) {
 }
 
 /**
+ * @brief External interrupt 6 ISR
+ */
+ISR(INT6_vect) {
+	//printf("Ext Interrupt 7!!!\r\n");
+	
+	const uint8_t index = 4;
+
+	if(!FLAG_ExtIntRisingEdge[index]) {
+		FLAG_ExtIntRisingEdge[index] = true;
+		
+		ExtIntRisingTCNT1[index] = TCNT1;
+		// 센싱 모드 Rising edge > Falling edge
+		EICRB &= ~(1 << ISC60);
+		} else {
+		FLAG_ExtIntRisingEdge[index] = false;
+		
+		ExtIntFallingTCNT1[index] = TCNT1;
+		// 센싱 모드 Falling edge > Rising edge
+		EICRB |= (1 << ISC60);
+		
+		FLAG_ExtIntReceivedPWM[index] = true;
+	}
+}
+
+/**
+ * @brief External interrupt 7 ISR
+ */
+ISR(INT7_vect) {
+	//printf("Ext Interrupt 7!!!\r\n");
+	
+	const uint8_t index = 5;
+
+	if(!FLAG_ExtIntRisingEdge[index]) {
+		FLAG_ExtIntRisingEdge[index] = true;
+		
+		ExtIntRisingTCNT1[index] = TCNT1;
+		// 센싱 모드 Rising edge > Falling edge
+		EICRB &= ~(1 << ISC70);
+		} else {
+		FLAG_ExtIntRisingEdge[index] = false;
+		
+		ExtIntFallingTCNT1[index] = TCNT1;
+		// 센싱 모드 Falling edge > Rising edge
+		EICRB |= (1 << ISC70);
+		
+		FLAG_ExtIntReceivedPWM[index] = true;
+	}
+}
+
+
+/**
  * @brief USART0 read char
  */
 int usartRxCharCh0() {
 	while(!(UCSR0A & (1 << RXC0)));
 	
+	UCSR0A &= ~(1 << RXC0);
+
 	return UDR0;
 }
 
@@ -459,9 +454,7 @@ int usartRxCharCh0() {
  * @brief USART0 write char
  */
 int usartTxCharCh0(char ch, FILE *fp) {
-	while (!(UCSR0A & (1 << UDRE0))) {
-		printf("??");
-	};
+	while (!(UCSR0A & (1 << UDRE0)));
 	
 	UDR0 = ch;
 
@@ -488,6 +481,10 @@ int usartTxCharCh1(char ch, FILE *fp) {
 	return 0;
 }
 
+/**
+ * @brief 현재 시간과 이전 시간과의 차이를 비교해 원하는 시간 차가 나왔을 때,
+ *        true를 반환함.
+ */
 bool timeDiff(unsigned long *PrevTime, unsigned long desiredTime) {
 	if((CurrTime - *PrevTime) > desiredTime) {
 		*PrevTime = CurrTime;
