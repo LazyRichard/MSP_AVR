@@ -1,6 +1,44 @@
 #include "msp.h"
 
-void receiveCMD(char ch) {
+void mspSendCmd(uint8_t cmd) {
+	mspSendCmdData(cmd, 0, 0);	
+}
+
+void mspSendCmdData(uint8_t cmd, size_t size, const uint8_t *data) {
+	uint8_t dataBuff[MSP_OUT_BUF_SIZE];
+	uint8_t curser = 0;
+
+	for(size_t i = 0; strnlen(MSP_PREAMBLE, MSP_OUT_BUF_SIZE); i++) {
+		dataBuff[curser++] = *(data + i);
+	}
+
+	dataBuff[curser++] = '<';
+	dataBuff[curser++] = (uint8_t)size;
+	
+	for(size_t i = 0; i < size; i++) {
+		dataBuff[curser++] = *(data + i);
+	}
+
+	dataBuff[curser++] = calcChecksum(cmd, (uint8_t)size, &data);
+
+	mspAddQueue((size_t)curser, dataBuff);
+}
+
+void mspAddQueue(size_t size, const uint8_t *data) {
+	for(size_t i = 0; i < size; i++) {
+		CommandQueue[queueCurser][i] = *(data + i);
+	}
+
+	queueCurser++;
+}
+
+void mspWrite() {
+	for (int i = 0; i < (MSP_COMMAND_OFFSET + CommandQueue[queueCurser][3]); i++) {
+		usartTxCharCh0(CommandQueue[queueCurser][i]);
+	}
+}
+
+void mspReceiveCmd(char ch) {
 	switch(status) {
 	case IDLE:
 		status = (ch == '$') ? HEADER_START : IDLE;
@@ -15,35 +53,43 @@ void receiveCMD(char ch) {
 		
 		break;
 	case HEADER_DIR:
-		mspDataSize = ch;
+		cData[cDataCurser].size;
 		status = HEADER_SIZE;
 		
-		if(mspDataSize > MSP_IN_BUF_SIZE)
+		if(cData[cDataCurser].size > MSP_IN_BUF_SIZE)
 			status = IDLE;
 		
 		break;
 	case HEADER_SIZE;
-		mspCommand = ch;
+		cData[cDataCurser].command;
 		bufCurser = 0;
 		status = CMD;
 		
 		break;
 	case CMD:
-		mspDataBuff[bufCurser++] = ch;
+		cData[cDataCurser].data[bufCurser++] = ch;
 		
-		if (bufCurser > mspDataSize)
+		if (bufCurser > cData[cDataCurser].size)
 			status = DATA;
 		
 		break;
 	case DATA:
-		if (verifyChecksum(mspCommand, mspDataSize, mspDataBuff, ch)) {
-			FLAG_CommandReceived = true;
+		if (verifyChecksum(cData[cDataCurser].command, cData[cDataCurser].size, cData[cDataCurser].data, ch)) {
+			cDataCurser++;
 			
 			status = IDLE;
 		} else {
 			status = IDLE;
 		}
 	}
+}
+
+CommandData mspRetrieveCMD() {
+	return (cDataCurser < 0) ? cData[0] : cData[cDataCurser--];
+}
+
+int mspAvailable() {
+	return cDataCurser;
 }
 
 uint8_t calcChecksum(uint8_t cmd, uint8_t size, const uint8_t *data) {

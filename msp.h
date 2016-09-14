@@ -1,7 +1,11 @@
 #pragma once
 
+#define MSP_QUEUE_SIZE 10
 #define MSP_IN_BUF_SIZE 70
 #define MSP_OUT_BUF_SIZE 255
+#define MSP_COMMAND_OFFSET 5
+
+const char MSP_PREAMBLE = "$M";
 
 enum MSP_CMD {
 	MSP_API_VERSION 			 = 1,	// out message
@@ -138,14 +142,37 @@ enum Status {
 	DATA
 };
 
+typedef struct _COMMANDDATA {
+	uint8_t command;
+	uint8_t size;
+	uint8_t data[MSP_IN_BUF_SIZE];
+} CommandData;
+
+// private
 bool FLAG_CommandReceived;
 
-enum Status status;
-uint8_t bufCurser;
-uint8_t mspDdataBuff[MSP_IN_BUF_SIZE];
-uint8_t mspDataSize;
-uint8_t mspCommand;
+uint8_t CommandQueue[MSP_QUEUE_SIZE][MSP_IN_BUF_SIZE];
 
-void receiveCMD(char);
+enum Status status;
+uint8_t queueCurser;
+uint8_t cDataCurser;
+uint8_t bufCurser;
+
 uint8_t calcChecksum(uint8_t, uint8_t, const uint8_t*);
 bool verifyChecksum(uint8_t, uint8_t, const uint8_t*, uint8_t);
+
+// public
+CommandData cData[MSP_QUEUE_SIZE];
+
+void mspSendCmd;(uint8_t);
+void mspSendCmdData(uint8_t, size_t, const uint8_t*);
+void mspAddQueue(size_t, const uint8_t*);
+void mspWrite();
+void mspReceiveCmd(char);
+CommandData mspRetrieveCMD();
+int mspAvailable();
+
+uint8_t parseDataUint8(uint8_t);
+int8_t parseDataInt8(uint8_t);
+uint16_t parseDataUint16(uint8_t, uint8_t);
+int16_t parseDataInt16(uint8_t, uint8_t);
