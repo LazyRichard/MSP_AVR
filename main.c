@@ -71,6 +71,9 @@ volatile bool FLAG_SerialReceived[2];
 
 unsigned char SerialChar[2];
 
+// MSP 관련
+CommandData cData;
+
 /*
  * 함수 선언
  */
@@ -223,6 +226,31 @@ int main() {
 				}
 			}
 		}
+
+		if(FLAG_SerialReceived[1]) {
+			FLAG_SerialReceived[1] = false;
+
+			mspReceiveCmd(SerialChar[1]);
+		}
+
+		mspWrite(usartTxCharCh1);
+
+		if(mspAvailable()) {
+			cData = mspRetrieveCMD();
+
+			switch(cData.command) {
+			default:
+				printf("CMD: %d", cData.command);
+				printf( "size: %d", cData.size);
+				printf(" data: ");
+				for(uint8_t i = 0; i < cData.size; i++) {
+					printf("%d ", cData.data[i]);
+				}
+
+				break;
+			}
+		}
+
 		serialEvent();
 		//serialEvent1();
 	}
@@ -235,6 +263,9 @@ void serialEvent() {
 		FLAG_SerialReceived[0] = false;
 
 		switch(SerialChar[0]) {
+		case 'a':
+			mspSendCmd(MSP_API_VERSION);
+			break;
 		default:
 			printf("%c", SerialChar[0]);
 			break;
@@ -287,6 +318,8 @@ ISR(USART0_UDRE_vect) {
  */
  ISR(USART1_RX_vect) {
 	 FLAG_SerialReceived[1] = true;
+
+	SerialChar[1] = usartRxCharCh0();
  }
  
 /**
