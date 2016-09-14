@@ -55,7 +55,8 @@ const uint8_t TCNT2_Value = TCNT2_BASE_1MS;
 volatile bool FLAG_ExtIntRisingEdge[NUM_CH];
 volatile bool FLAG_ExtIntReceivedPWM[NUM_CH];
 
-uint16_t RawRC[8];
+//                   ROLL  PITCH YAW  THRO  AUX1  AUX2  AUX3  AUX4
+uint16_t RawRC[8] = {1500, 1500, 1500, 880, 1500, 1500, 1500, 1500};
 
 // 시간 관련
 unsigned long CurrTime = 0;
