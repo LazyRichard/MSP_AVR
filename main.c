@@ -50,20 +50,61 @@ enum RC_CHANS {
 const uint8_t TCNT2_Value = TCNT2_BASE_1MS;
 
 /*
+ * 전역 구조체
+ */
+typedef struct _MSP_RC_T {
+	uint16_t roll;
+	uint16_t pitch;
+	uint16_t yaw;
+	uint16_t throttle;
+	uint16_t aux1;
+	uint16_t aux2;
+	uint16_t aux3;
+	uint16_t aux4;
+} msp_rc_t;
+typedef struct _MSP_GPS_T {
+	uint8_t fix;
+	uint8_t num_sat;
+	uint32_t lat;
+	uint32_t lon;
+	uint16_t altitude;
+	uint16_t speed;
+	uint16_t ground_course;
+} msp_gps_t;
+
+typedef struct _MSP_ATT_T {
+	uint16_t angx;
+	uint16_t angy;
+	uint16_t heading;
+} msp_att_t;
+
+/*
  * 전역 변수
  */
 // Ext. 인터럽트 관련
 volatile bool FLAG_ExtIntRisingEdge[NUM_CH];
 volatile bool FLAG_ExtIntReceivedPWM[NUM_CH];
 
+// MSP 데이터 관련
 //                   ROLL  PITCH YAW  THRO  AUX1  AUX2  AUX3  AUX4
 uint16_t RawRC[8] = {1500, 1500, 1500, 880, 1500, 1500, 1500, 1500};
+msp_rc_t MspRC_FC = { .roll     = 1500,
+					  .pitch    = 1500,
+					  .yaw      = 1500,
+					  .throttle = 880,
+					  .aux1     = 1500,
+					  .aux2     = 1500,
+					  .aux3     = 1500,
+					  .aux4     = 1500 };
+msp_gps_t MspGPS;
+msp_att_t MspATT;
 
 // 시간 관련
 unsigned long CurrTime = 0;
 
 unsigned long PrevTimeDebug = 0;
 unsigned long PrevTimeRC = 0;
+unsigned long PrevTimeGPS = 0;
 unsigned long PrevTimeUsartWriteCH0 = 0;
 unsigned long PrevTimeUsartWriteCH1 = 0;
 
@@ -201,12 +242,12 @@ int main() {
 			printf("%lu", CurrTime);
 			printf_P(PSTR("=====\r\n"));
 			#ifdef DEBUG_SYSTEMSTATUS
-			printf_P(PSTR(" R: ")); printf("%" PRIu16, RawRC[0]);
-			printf_P(PSTR(" P: ")); printf("%" PRIu16, RawRC[1]);
-			printf_P(PSTR(" Y: ")); printf("%" PRIu16, RawRC[2]);
-			printf_P(PSTR(" T: ")); printf("%" PRIu16, RawRC[3]);
-			printf_P(PSTR(" A1: ")); printf("%" PRIu16, RawRC[4]);
-			printf_P(PSTR(" A2: ")); printf("%" PRIu16, RawRC[5]); printf_P(PSTR("\r\n"));
+			printf_P(PSTR(" R: ")); printf("%" PRIu16, RawRC[ROLL]);
+			printf_P(PSTR(" P: ")); printf("%" PRIu16, RawRC[PITCH]);
+			printf_P(PSTR(" Y: ")); printf("%" PRIu16, RawRC[YAW]);
+			printf_P(PSTR(" T: ")); printf("%" PRIu16, RawRC[THROTTLE]);
+			printf_P(PSTR(" A1: ")); printf("%" PRIu16, RawRC[AUX1]);
+			printf_P(PSTR(" A2: ")); printf("%" PRIu16, RawRC[AUX2]); printf_P(PSTR("\r\n"));
 			#endif
 		}
 
@@ -228,18 +269,39 @@ int main() {
 			}
 		}
 
-		if(FLAG_SerialReceived[1]) {
-			FLAG_SerialReceived[1] = false;
-
-			mspReceiveCmd(SerialChar[1]);
-		}
-
+		// write msp command to usart1
 		mspWrite(usartTxCharCh1);
 
 		if(mspAvailable()) {
 			cData = mspRetrieveCMD();
 
 			switch(cData.command) {
+			case MSP_RC:
+				MspRC_FC.roll = parseDataUint16(cData.data[0], cData.data[1]);
+				MspRC_FC.pitch = parseDataUint16(cData.data[2], cData.data[3]);
+				MspRC_FC.yaw = parseDataUint16(cData.data[4], cData.data[5]);
+				MspRC_FC.throttle = parseDataUint16(cData.data[6], cData.data[7]);
+				MspRC_FC.aux1 = parseDataUint16(cData.data[8], cData.data[9]);
+				MspRC_FC.aux2 = parseDataUint16(cData.data[10], cData.data[11]);
+				MspRC_FC.aux3 = parseDataUint16(cData.data[12], cData.data[13]);
+				MspRC_FC.aux4 = parseDataUint16(cData.data[14], cData.data[15]);
+
+				break;
+			case MSP_RAW_GPS:
+				MspGPS.fix = parseDataUint8(cData.data[0]);
+				MspGPS.num_sat = parseDataUint8(cData.data[1]);
+				MspGPS.lat = parseDataUint32(cData.data[2], cData.data[3], cData.data[4]);
+				MspGPS.lon = parseDataUint32(cData.data[5], cData.data[6], cData.data[7]);
+				MspGPS.altitude = parseDataUint16(cData.data[8], cData.data[9]);
+				MspGPS.speed = parseDataUint16(cData.data[10], cData.data[11]);
+				MspGPS.ground_course = parseDataUint16(cData.data[12], cData.data[13]);
+
+				printf_P(PSTR(" GPS Fix: ")); printf("%" PRIu8, MspGPS.fix);
+				printf_P(PSTR(" numSat: ")); printf("%" PRIu8, MspGPS.num_sat);
+				printf_P(PSTR(" lat: ")); printf("%" PRIu32, MspGPS.lat);
+				printf_P(PSTR(" lon: ")); printf("%" PRIu32, MspGPS.lon);
+
+				break;
 			default:
 				printf_P(PSTR("CMD: ")); printf("%d", cData.command);
 				printf_P(PSTR(" size: ")); printf("%d", cData.size);
@@ -254,18 +316,31 @@ int main() {
 		}
 
 		if(timeDiff(&PrevTimeRC, 50)) {
-			uint8_t rcData[] = {RawRC[0], RawRC[0] >> 8, RawRC[1], RawRC[1] >> 8, RawRC[2], RawRC[2] >> 8, RawRC[3], RawRC[3] >> 8. RawRC[4], RawRC[4] >> 8, RawRC[5], RawRC[5] >> 8};
+			uint8_t rcData[] = {RawRC[ROLL], RawRC[ROLL] >> 8, RawRC[PITCH], RawRC[PITCH] >> 8,
+							    RawRC[YAW], RawRC[YAW] >> 8, RawRC[AUX1], RawRC[AUX1] >> 8,
+								RawRC[AUX2], RawRC[AUX2] >> 8, RawRC[AUX3], RawRC[AUX3] >> 8,
+								RawRC[AUX4], RawRC[AUX4] >> 8 };
 
+			// Apply receiver RC to FC
 			mspSendCmdData(MSP_SET_RAW_RC,sizeof(rcData) / sizeof(*rcData), rcData);
+			// Request RC information from FC
+			mspSendCmd(MSP_RC);
+		}
+
+		if(timeDiff(&PrevTimeGPS, 75)) {
+			mspSendCmd(MSP_RAW_GPS);
 		}
 
 		serialEvent();
-		//serialEvent1();
+		serialEvent1();
 	}
 
 	return 0;
 }
 
+/**
+ * @brief Serial event from debug console
+ */
 void serialEvent() {
 	if(FLAG_SerialReceived[0]) {
 		FLAG_SerialReceived[0] = false;
@@ -287,6 +362,9 @@ void serialEvent() {
 	}
 }
 
+/**
+ * @brief Serial event from msp
+ */
 void serialEvent1() {
 	if(FLAG_SerialReceived[1]) {
 		FLAG_SerialReceived[1] = false;
@@ -294,6 +372,7 @@ void serialEvent1() {
 
 		switch(SerialChar[1]) {
 		default:
+			mspReceiveCmd(SerialChar[1]);
 			printf("%c", SerialChar[1]); printf(".");
 			break;
 		}
