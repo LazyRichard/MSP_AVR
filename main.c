@@ -28,7 +28,10 @@
 /*
  * 디버그 관련
  */
-#define DEBUG_SYSTEMSTATUS
+//#define DEBUG_SYSTEMSTATUS
+#define DEBUG_RECEIVERRC
+#define DEBUG_FCRCINFO
+#define DEBUG_GPSINFO
 
 /*
  * Enum
@@ -62,6 +65,7 @@ typedef struct _MSP_RC_T {
 	uint16_t aux3;
 	uint16_t aux4;
 } msp_rc_t;
+
 typedef struct _MSP_GPS_T {
 	uint8_t fix;
 	uint8_t num_sat;
@@ -241,7 +245,7 @@ int main() {
 			printf_P(PSTR("SystemStatus "));
 			printf("%lu", CurrTime);
 			printf_P(PSTR("=====\r\n"));
-			#ifdef DEBUG_SYSTEMSTATUS
+			#ifdef DEBUG_RECEIVERRC
 			printf_P(PSTR(" R: ")); printf("%" PRIu16, RawRC[ROLL]);
 			printf_P(PSTR(" P: ")); printf("%" PRIu16, RawRC[PITCH]);
 			printf_P(PSTR(" Y: ")); printf("%" PRIu16, RawRC[YAW]);
@@ -286,6 +290,18 @@ int main() {
 				MspRC_FC.aux3 = parseDataUint16(cData.data[12], cData.data[13]);
 				MspRC_FC.aux4 = parseDataUint16(cData.data[14], cData.data[15]);
 
+				#ifdef DEBUG_FCRCINFO
+				printf_P(PSTR("FC RC - "));
+				printf_P(PSTR(" R: ")); printf("%" PRIu16, MspRC_FC.roll);
+				printf_P(PSTR(" P: ")); printf("%" PRIu16, MspRC_FC.pitch);
+				printf_P(PSTR(" Y: ")); printf("%" PRIu16, MspRC_FC.yaw);
+				printf_P(PSTR(" T: ")); printf("%" PRIu16, MspRC_FC.throttle);
+				printf_P(PSTR(" A1: ")); printf("%" PRIu16, MspRC_FC.aux1);
+				printf_P(PSTR(" A2: ")); printf("%" PRIu16, MspRC_FC.aux2);
+				printf_P(PSTR(" A3: ")); printf("%" PRIu16, MspRC_FC.aux3);
+				printf_P(PSTR(" A4: ")); printf("%" PRIu16, MspRC_FC.aux4); printf_P(PSTR("\r\n"));
+				#endif
+
 				break;
 			case MSP_RAW_GPS:
 				MspGPS.fix = parseDataUint8(cData.data[0]);
@@ -296,10 +312,12 @@ int main() {
 				MspGPS.speed = parseDataUint16(cData.data[10], cData.data[11]);
 				MspGPS.ground_course = parseDataUint16(cData.data[12], cData.data[13]);
 
+				#ifdef DEBUG_GPSINFO
 				printf_P(PSTR(" GPS Fix: ")); printf("%" PRIu8, MspGPS.fix);
 				printf_P(PSTR(" numSat: ")); printf("%" PRIu8, MspGPS.num_sat);
 				printf_P(PSTR(" lat: ")); printf("%" PRIu32, MspGPS.lat);
-				printf_P(PSTR(" lon: ")); printf("%" PRIu32, MspGPS.lon);
+				printf_P(PSTR(" lon: ")); printf("%" PRIu32, MspGPS.lon); printf_P(PSTR("\r\n"));
+				#endif
 
 				break;
 			default:
