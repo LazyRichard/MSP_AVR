@@ -5,11 +5,13 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <string.h>
+#include <avr/pgmspace.h>
 
 #define MSP_QUEUE_SIZE 10
 #define MSP_IN_BUF_SIZE 70
-#define MSP_OUT_BUF_SIZE 255
-#define MSP_COMMAND_OFFSET 5
+#define MSP_OUT_BUF_SIZE 70
+
+#define MSP_COMMAND_OFFSET 6
 
 enum MSP_CMD {
 	MSP_API_VERSION 			 = 1,	// out message

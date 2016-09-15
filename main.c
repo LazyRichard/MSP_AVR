@@ -8,6 +8,7 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/pgmspace.h>
 #include <util/delay.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -62,6 +63,7 @@ uint16_t RawRC[8] = {1500, 1500, 1500, 880, 1500, 1500, 1500, 1500};
 unsigned long CurrTime = 0;
 
 unsigned long PrevTimeDebug = 0;
+unsigned long PrevTimeUsartWriteCH0 = 0;
 
 uint16_t ExtIntRisingTCNT1[NUM_CH];
 uint16_t ExtIntFallingTCNT1[NUM_CH];
@@ -124,8 +126,10 @@ void setup() {
 			  (1 << TXEN0);
 	UCSR0C |= (1 << UCSZ00) | // 8bit
 			  (1 << UCSZ01);
-	UBRR0H = 0x00;			  // Baudrate: 9600
-	UBRR0L = 0x67;
+	//UBRR0H = 0x00;			  // Baudrate: 9,600
+	//UBRR0L = 0x67;
+	UBRR0H = 0x00;			  // Baudrate: 115,200
+	UBRR0L = 0x08;
 	
 	DDRE &= ~(1 << DDE0);
 	DDRE |= (1 << DDE1);
@@ -139,8 +143,8 @@ void setup() {
 			  (1 << TXEN1);
 	UCSR1C |= (1 << UCSZ10) | // 8bit
 			  (1 << UCSZ11);
-	UBRR1H = 0x00;		      // Baudrate: 9600
-	UBRR1L = 0x67;
+	UBRR1H = 0x00;		      // Baudrate: 115,200
+	UBRR1L = 0x08;
 
 	DDRD &= ~(1 << DDD2);
 	DDRD |= (1 << DDD3);
@@ -181,7 +185,7 @@ void setup() {
 int main() {
 	setup();
 	
-	printf("Start\r\n");
+	printf_P(PSTR("Start\r\n"));
 
 	_delay_ms(50);
 
@@ -190,24 +194,19 @@ int main() {
 	
 	while(true) {
 		
-		#ifdef DEBUG_SYSTEMSTATUS
 		if (timeDiff(&PrevTimeDebug, 1000)) {
-			printf("SystemStatus %lu =====\r\n", CurrTime);
-			_delay_ms(5);
-			printf(" R: %" PRIu16, RawRC[0]);
-			_delay_ms(5);
-			printf(" P: %" PRIu16, RawRC[1]);
-			_delay_ms(5);
-			printf(" Y: %" PRIu16, RawRC[2]);
-			_delay_ms(5);
-			printf(" T: %" PRIu16, RawRC[3]);
-			_delay_ms(5);
-			printf(" A1: %" PRIu16, RawRC[4]);
-			_delay_ms(5);
-			printf(" A2: %" PRIu16 "\r\n", RawRC[5]);
-			_delay_ms(5);
+			printf_P(PSTR("SystemStatus "));
+			printf("%lu", CurrTime);
+			printf_P(PSTR("=====\r\n"));
+			#ifdef DEBUG_SYSTEMSTATUS
+			printf_P(PSTR(" R: ")); printf("%" PRIu16, RawRC[0]);
+			printf_P(PSTR(" P: ")); printf("%" PRIu16, RawRC[1]);
+			printf_P(PSTR(" Y: ")); printf("%" PRIu16, RawRC[2]);
+			printf_P(PSTR(" T: ")); printf("%" PRIu16, RawRC[3]);
+			printf_P(PSTR(" A1: ")); printf("%" PRIu16, RawRC[4]);
+			printf_P(PSTR(" A2: ")); printf("%" PRIu16, RawRC[5]); printf_P(PSTR("\r\n"));
+			#endif
 		}
-		#endif
 
 		for(uint8_t i = 0; i < NUM_CH; i++) {
 			if(FLAG_ExtIntReceivedPWM[i]) {
@@ -240,12 +239,13 @@ int main() {
 
 			switch(cData.command) {
 			default:
-				printf("CMD: %d", cData.command);
-				printf( "size: %d", cData.size);
-				printf(" data: ");
+				printf_P(PSTR("CMD: ")); printf("%d", cData.command);
+				printf_P(PSTR(" size: ")); printf("%d", cData.size);
+				printf_P(PSTR(" data: "));
 				for(uint8_t i = 0; i < cData.size; i++) {
 					printf("%d ", cData.data[i]);
 				}
+				printf_P(PSTR("\r\n"));
 
 				break;
 			}
@@ -265,6 +265,12 @@ void serialEvent() {
 		switch(SerialChar[0]) {
 		case 'a':
 			mspSendCmd(MSP_API_VERSION);
+			break;
+		case 's':
+			mspSendCmd(MSP_FC_VARIANT);
+			break;
+		case 'd':
+			mspSendCmd(MSP_FC_VERSION);
 			break;
 		default:
 			printf("%c", SerialChar[0]);
@@ -326,8 +332,6 @@ ISR(USART0_UDRE_vect) {
  * @brief External interrupt 0 ISR
  */
 ISR(INT0_vect) {
-	//printf("Ext Interrupt 0!!!\r\n");
-	
 	const uint8_t index = 0;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -351,8 +355,6 @@ ISR(INT0_vect) {
  * @brief External interrupt 1 ISR
  */
 ISR(INT1_vect) {
-	//printf("Ext Interrupt 1!!!\r\n");
-	
 	const uint8_t index = 1;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -376,8 +378,6 @@ ISR(INT1_vect) {
  * @brief External interrupt 4 ISR
  */
 ISR(INT4_vect) {
-	//printf("Ext Interrupt 4!!!\r\n");
-	
 	const uint8_t index = 2;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -401,8 +401,6 @@ ISR(INT4_vect) {
  * @brief External interrupt 5 ISR
  */
 ISR(INT5_vect) {
-	//printf("Ext Interrupt 5!!!\r\n");
-	
 	const uint8_t index = 3;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -426,8 +424,6 @@ ISR(INT5_vect) {
  * @brief External interrupt 6 ISR
  */
 ISR(INT6_vect) {
-	//printf("Ext Interrupt 7!!!\r\n");
-	
 	const uint8_t index = 4;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -450,9 +446,7 @@ ISR(INT6_vect) {
 /**
  * @brief External interrupt 7 ISR
  */
-ISR(INT7_vect) {
-	//printf("Ext Interrupt 7!!!\r\n");
-	
+ISR(INT7_vect) {	
 	const uint8_t index = 5;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -488,7 +482,10 @@ int usartRxCharCh0() {
  * @brief USART0 write char
  */
 int usartTxCharCh0(char ch, FILE *fp) {
-	while (!(UCSR0A & (1 << UDRE0)));
+	while (!(UCSR0A & (1 << UDRE0))) {
+		if(timeDiff(&PrevTimeUsartWriteCH0, 500))
+			break;
+	}
 	
 	UDR0 = ch;
 
