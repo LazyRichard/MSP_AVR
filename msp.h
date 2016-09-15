@@ -163,7 +163,9 @@ extern void mspReceiveCmd(char);
 extern CommandData mspRetrieveCMD();
 extern int mspAvailable();
 
-uint8_t parseDataUint8(uint8_t);
-int8_t parseDataInt8(uint8_t);
-uint16_t parseDataUint16(uint8_t, uint8_t);
-int16_t parseDataInt16(uint8_t, uint8_t);
+extern uint8_t parseDataUint8(uint8_t);
+extern int8_t parseDataInt8(uint8_t);
+extern uint16_t parseDataUint16(uint8_t, uint8_t);
+extern int16_t parseDataInt16(uint8_t, uint8_t);
+extern uint32_t parseDataUint32(uint8_t, uint8_t, uint8_t);
+extern int32_t parseDataInt32(uint8_t, uint8_t, uint8_t);

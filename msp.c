@@ -202,3 +202,27 @@ uint8_t calcChecksum(uint8_t cmd, uint8_t size, const uint8_t *data) {
 bool verifyChecksum(uint8_t cmd, uint8_t size, const uint8_t *data, uint8_t checksum) {
 	return (calcChecksum(cmd, size, data) == checksum) ? true : false;
 }
+
+uint8_t parseDataUint8(uint8_t data) {
+	return data;
+}
+
+int8_t parseDataInt8(uint8_t data) {
+	return (int8_t)data;
+}
+
+uint16_t parseDataUint16(uint8_t data1, uint8_t data2) {
+	return ((uint16_t)data2 << 8) + data1;
+}
+
+int16_t parseDataInt16(uint8_t data1, uint8_t data2) {
+	return ((int16_t)data2 << 8) + data1;
+}
+
+uint32_t parseDataUint32(uint8_t data1, uint8_t data2, uint8_t data3) {
+	return ((uint32_t)data3 << 16) + ((uint32_t)data2 << 8) + data1;
+}
+
+int32_t parseDataInt32(uint8_t data1, uint8_t data2, uint8_t data3) {
+	return ((int32_t)data3 << 16) + ((int32_t)data2 << 8) + data1;
+}
