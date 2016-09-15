@@ -63,7 +63,9 @@ uint16_t RawRC[8] = {1500, 1500, 1500, 880, 1500, 1500, 1500, 1500};
 unsigned long CurrTime = 0;
 
 unsigned long PrevTimeDebug = 0;
+unsigned long PrevTimeRC = 0;
 unsigned long PrevTimeUsartWriteCH0 = 0;
+unsigned long PrevTimeUsartWriteCH1 = 0;
 
 uint16_t ExtIntRisingTCNT1[NUM_CH];
 uint16_t ExtIntFallingTCNT1[NUM_CH];
@@ -251,6 +253,12 @@ int main() {
 			}
 		}
 
+		if(timeDiff(&PrevTimeRC, 50)) {
+			uint8_t rcData[] = {RawRC[0], RawRC[0] >> 8, RawRC[1], RawRC[1] >> 8, RawRC[2], RawRC[2] >> 8, RawRC[3], RawRC[3] >> 8. RawRC[4], RawRC[4] >> 8, RawRC[5], RawRC[5] >> 8};
+
+			mspSendCmdData(MSP_SET_RAW_RC,sizeof(rcData) / sizeof(*rcData), rcData);
+		}
+
 		serialEvent();
 		//serialEvent1();
 	}
@@ -280,16 +288,13 @@ void serialEvent() {
 }
 
 void serialEvent1() {
-	char ch;
-
 	if(FLAG_SerialReceived[1]) {
 		FLAG_SerialReceived[1] = false;
 
-		ch = usartRxCharCh1();
 
-		switch(ch) {
+		switch(SerialChar[1]) {
 		default:
-			printf("%c", ch);
+			printf("%c", SerialChar[1]); printf(".");
 			break;
 		}
 	}
@@ -313,19 +318,14 @@ ISR(USART0_RX_vect) {
 }
 
 /**
- * @brief USART0 data register empty ISR
- */
-ISR(USART0_UDRE_vect) {
-	
-}
-
-/**
  * @brief USART1 RX complete ISR
  */
  ISR(USART1_RX_vect) {
 	 FLAG_SerialReceived[1] = true;
 
 	SerialChar[1] = usartRxCharCh0();
+
+	mspReceiveCmd(SerialChar[1]);
  }
  
 /**
@@ -483,6 +483,7 @@ int usartRxCharCh0() {
  */
 int usartTxCharCh0(char ch, FILE *fp) {
 	while (!(UCSR0A & (1 << UDRE0))) {
+		// Write timeout
 		if(timeDiff(&PrevTimeUsartWriteCH0, 500))
 			break;
 	}
@@ -505,7 +506,11 @@ int usartRxCharCh1() {
  * @brief USART1 write char
  */
 int usartTxCharCh1(char ch, FILE *fp) {
-	while (!(UCSR1A & (1 << UDRE1)));
+	while (!(UCSR1A & (1 << UDRE1))) {
+		// Write timeout
+		if(timeDiff(&PrevTimeUsartWriteCH1, 500))
+			break;
+	}
 	
 	UDR1 = ch;
 
