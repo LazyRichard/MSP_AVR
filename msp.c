@@ -1,7 +1,10 @@
 #include "msp.h"
 
-#define DEBUG_MSP
-#define DEBUG_MSP_SIMPLE
+//#define DEBUG_MSP
+//#define DEBUG_MSP_SIMPLE
+//#define DEBUG_MSP_INPUT
+//#define DEBUG_MSP_INPUT_SIMPLE
+
 
 volatile bool FLAG_CommandReceived = false;
 
@@ -9,44 +12,46 @@ uint8_t CommandQueue[MSP_QUEUE_SIZE][MSP_OUT_BUF_SIZE];
 CommandData cData[MSP_QUEUE_SIZE];
 
 enum Status status = IDLE;
-volatile uint8_t queueCurser = 0;
-volatile uint8_t cDataCurser = 0;
-volatile uint8_t bufCurser = 0;
+volatile uint8_t queueCursor = 0;
+volatile uint8_t cDataCursor = 0;
+volatile uint8_t bufCursor = 0;
 
 uint8_t calcChecksum(uint8_t, uint8_t, const uint8_t*);
 bool verifyChecksum(uint8_t, uint8_t, const uint8_t*, uint8_t);
 
 void mspSendCmd(uint8_t cmd) {
+	#ifdef DEBUG_MSP_SIMPLE
 	printf_P(PSTR("mspSendCmd\r\n"));
+	#endif
 
 	mspSendCmdData(cmd, 0, 0);	
 }
 
 void mspSendCmdData(uint8_t cmd, size_t size, const uint8_t *data) {
 	uint8_t dataBuff[MSP_OUT_BUF_SIZE];
-	size_t curser = 0;
+	size_t cursor = 0;
 
-	dataBuff[curser++] = '$';
-	dataBuff[curser++] = 'M';
-	dataBuff[curser++] = '<';
-	dataBuff[curser++] = (uint8_t)size;
-	dataBuff[curser++] = cmd;
+	dataBuff[cursor++] = '$';
+	dataBuff[cursor++] = 'M';
+	dataBuff[cursor++] = '<';
+	dataBuff[cursor++] = (uint8_t)size;
+	dataBuff[cursor++] = cmd;
 	
 	for(size_t i = 0; i < size; i++) {
-		dataBuff[curser++] = *(data + i);
+		dataBuff[cursor++] = *(data + i);
 	}
 
-	dataBuff[curser++] = calcChecksum(cmd, (uint8_t)size, data);
+	dataBuff[cursor++] = calcChecksum(cmd, (uint8_t)size, data);
 
 	#ifdef DEBUG_MSP
 	printf_P(PSTR("dataBuff: "));
-	for(size_t i = 0; i < curser; i++) {
+	for(size_t i = 0; i < cursor; i++) {
 		printf(" %d", dataBuff[i]);
 	}
 	printf("\r\n");
 	#endif
 
-	mspAddQueue(curser, dataBuff);
+	mspAddQueue(cursor, dataBuff);
 }
 
 void mspAddQueue(size_t size, const uint8_t *data) {
@@ -55,7 +60,7 @@ void mspAddQueue(size_t size, const uint8_t *data) {
 	#endif
 
 	for(size_t i = 0; i < size; i++) {
-		CommandQueue[queueCurser][i] = *(data + i);
+		CommandQueue[queueCursor][i] = *(data + i);
 		
 		#ifdef DEBUG_MSP	
 		printf(" %d", *(data + i));
@@ -66,23 +71,24 @@ void mspAddQueue(size_t size, const uint8_t *data) {
 	printf_P(PSTR("\r\n"));
 	#endif
 
-	queueCurser = (queueCurser + 1) % MSP_QUEUE_SIZE;
+	queueCursor = (queueCursor + 1) % MSP_QUEUE_SIZE;
 }
 
 void mspWrite(int (*fPtr)(char, FILE*)) {
-	if(queueCurser) {
-		queueCurser--;
+	if(queueCursor) {
+		queueCursor--;
 
 		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
-		printf_P(PSTR("Command Queue:"));
+		printf_P(PSTR("Command Write:"));
+		printf("%d ", MSP_COMMAND_OFFSET + CommandQueue[queueCursor][3]);
 		#endif
 
-		for (int i = 0; i < (MSP_COMMAND_OFFSET + CommandQueue[queueCurser][3]); i++) {
-			fPtr(CommandQueue[queueCurser][i], 0);
-
+		for (int i = 0; i < (MSP_COMMAND_OFFSET + CommandQueue[queueCursor][3]); i++) {
 			#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
-			printf(" %d", CommandQueue[queueCurser][i]);
+			printf(" %d", CommandQueue[queueCursor][i]);
 			#endif
+
+			fPtr(CommandQueue[queueCursor][i], 0);
 		}
 
 		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
@@ -94,7 +100,7 @@ void mspWrite(int (*fPtr)(char, FILE*)) {
 void mspReceiveCmd(char ch) {
 	switch(status) {
 	case IDLE:
-		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
+		#ifdef DEBUG_MSP_INPUT
 		printf_P(PSTR("MSPReceive IDLE\r\n"));
 		#endif
 
@@ -102,7 +108,7 @@ void mspReceiveCmd(char ch) {
 		
 		break;
 	case HEADER_START:
-		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
+		#ifdef DEBUG_MSP_INPUT
 		printf_P(PSTR("MSPReceive HEADER_START\r\n"));
 		#endif
 
@@ -110,7 +116,7 @@ void mspReceiveCmd(char ch) {
 		
 		break;
 	case HEADER_M:
-		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
+		#ifdef DEBUG_MSP_INPUT
 		printf_P(PSTR("MSPReceive HEADER_M\r\n"));
 		#endif
 
@@ -118,59 +124,60 @@ void mspReceiveCmd(char ch) {
 		
 		break;
 	case HEADER_DIR:
-		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
+		#ifdef DEBUG_MSP_INPUT
 		printf_P(PSTR("MSPReceive HEADER_DIR\r\n"));
 		#endif
 
-		cData[cDataCurser].size = ch;
+		cData[cDataCursor].size = ch;
 		status = HEADER_SIZE;
 		
-		if(cData[cDataCurser].size > MSP_IN_BUF_SIZE)
+		if(cData[cDataCursor].size > MSP_IN_BUF_SIZE)
 			status = IDLE;
 		
 		break;
 	case HEADER_SIZE:
-		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
+		#ifdef DEBUG_MSP_INPUT
 		printf_P(PSTR("MSPReceive HEADER_SIZE\r\n"));
 		#endif
 
-		cData[cDataCurser].command = ch;
-		bufCurser = 0;
+		cData[cDataCursor].command = ch;
+		bufCursor = 0;
 		status = CMD;
 		
 		break;
 	case CMD:
-		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
-		printf_P(PSTR("MSPReceive CMD\r\n"));
+		#ifdef DEBUG_MSP_INPUT
+		printf_P(PSTR("MSPReceive CMD: "));
+		printf("%d\r\n", ch);
 		#endif
 
-		cData[cDataCurser].data[bufCurser++] = ch;
+		cData[cDataCursor].data[bufCursor++] = ch;
 		
-		if (bufCurser > cData[cDataCurser].size)
+		if (bufCursor > cData[cDataCursor].size - 1)
 			status = DATA;
 		
 		break;
 	case DATA:
-		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
+		#if defined(DEBUG_MSP_INPUT) || defined(DEBUG_MSP_INPUT_SIMPLE)
 		printf_P(PSTR("MSPReceive DATA\r\n"));
 		#endif
 
-		if (verifyChecksum(cData[cDataCurser].command, cData[cDataCurser].size, cData[cDataCurser].data, ch)) {
+		if (verifyChecksum(cData[cDataCursor].command, cData[cDataCursor].size, cData[cDataCursor].data, ch)) {
 
-			#ifdef DEBUG_MSP
+			#if defined(DEBUG_MSP_INPUT) || defined(DEBUG_MSP_INPUT_SIMPLE)
 			printf_P(PSTR("MSPReceive Data: "));
-			printf("%d.%d.", cData[cDataCurser].command, cData[cDataCurser].size);
-			for(uint8_t i = 0; i < cData[cDataCurser].size; i++) {
-			printf("%d.", cData[cDataCurser].data[i]);
+			printf("%d.%d.", cData[cDataCursor].command, cData[cDataCursor].size);
+			for(uint8_t i = 0; i < cData[cDataCursor].size; i++) {
+			printf("%d.", cData[cDataCursor].data[i]);
 			}
 			printf("\r\n");
 			#endif
 
-			cDataCurser++;
+			cDataCursor++;
 			
 			status = IDLE;
 		} else {
-			#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
+			#if defined(DEBUG_MSP_INPUT) || defined(DEBUG_MSP_INPUT_SIMPLE)
 			printf_P(PSTR("MSPReceive Verify checksum failed\r\n"));
 			#endif
 
@@ -180,11 +187,11 @@ void mspReceiveCmd(char ch) {
 }
 
 CommandData mspRetrieveCMD() {
-	return (cDataCurser < 0) ? cData[0] : cData[cDataCurser--];
+	return (cDataCursor < 0) ? cData[0] : cData[--cDataCursor];
 }
 
 int mspAvailable() {
-	return cDataCurser;
+	return cDataCursor;
 }
 
 uint8_t calcChecksum(uint8_t cmd, uint8_t size, const uint8_t *data) {
