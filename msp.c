@@ -16,9 +16,13 @@ volatile uint8_t queueCursor = 0;
 volatile uint8_t cDataCursor = 0;
 volatile uint8_t bufCursor = 0;
 
+// private
 uint8_t calcChecksum(uint8_t, uint8_t, const uint8_t*);
 bool verifyChecksum(uint8_t, uint8_t, const uint8_t*, uint8_t);
 
+/**
+ * @brief 데이터가 없는 단순 msp 명령의 전송 예약
+ */
 void mspSendCmd(uint8_t cmd) {
 	#ifdef DEBUG_MSP_SIMPLE
 	printf_P(PSTR("mspSendCmd\r\n"));
@@ -27,6 +31,9 @@ void mspSendCmd(uint8_t cmd) {
 	mspSendCmdData(cmd, 0, 0);	
 }
 
+/**
+ * @brief 데이터가 있는 msp 명령의 전송 예약
+ */
 void mspSendCmdData(uint8_t cmd, size_t size, const uint8_t *data) {
 	uint8_t dataBuff[MSP_OUT_BUF_SIZE];
 	size_t cursor = 0;
@@ -54,6 +61,9 @@ void mspSendCmdData(uint8_t cmd, size_t size, const uint8_t *data) {
 	mspAddQueue(cursor, dataBuff);
 }
 
+/**
+ * @brief msp 명령을 전송 큐에 저장
+ */
 void mspAddQueue(size_t size, const uint8_t *data) {
 	#ifdef DEBUG_MSP	
 	printf_P(PSTR("mspAddQueue:"));
@@ -74,6 +84,9 @@ void mspAddQueue(size_t size, const uint8_t *data) {
 	queueCursor = (queueCursor + 1) % MSP_QUEUE_SIZE;
 }
 
+/**
+ * @brief 전송 큐에 있는 명령들을 시리얼에 출력하는 함수
+ */
 void mspWrite(int (*fPtr)(char, FILE*)) {
 	if(queueCursor) {
 		queueCursor--;
@@ -88,7 +101,7 @@ void mspWrite(int (*fPtr)(char, FILE*)) {
 			printf(" %d", CommandQueue[queueCursor][i]);
 			#endif
 
-			fPtr(CommandQueue[queueCursor][i], 0);
+			fPtr(CommandQueue[queueCursor][i], NULL);
 		}
 
 		#if defined(DEBUG_MSP) || defined(DEBUG_MSP_SIMPLE)
@@ -97,6 +110,9 @@ void mspWrite(int (*fPtr)(char, FILE*)) {
 	}
 }
 
+/**
+ * @brief USART를 통해 입력 받은 msp 데이터 처리
+ */
 void mspReceiveCmd(char ch) {
 	switch(status) {
 	case IDLE:
@@ -186,14 +202,23 @@ void mspReceiveCmd(char ch) {
 	}
 }
 
+/**
+ * @brief 무결성이 확인된 msp 명령을 반환
+ */
 CommandData mspRetrieveCMD() {
 	return (cDataCursor < 0) ? cData[0] : cData[--cDataCursor];
 }
 
+/**
+ * @brief 입력 받은 msp 명령들이 존재하는지 반환
+ */
 int mspAvailable() {
 	return cDataCursor;
 }
 
+/**
+ * @brief 체크섬 계산 함수
+ */
 uint8_t calcChecksum(uint8_t cmd, uint8_t size, const uint8_t *data) {
 	uint8_t checksum = 0;
 	
@@ -206,10 +231,16 @@ uint8_t calcChecksum(uint8_t cmd, uint8_t size, const uint8_t *data) {
 	return checksum;
 }
 
+/**
+ * @brief 체크섬의 무결성을 확인하는 함수
+ */
 bool verifyChecksum(uint8_t cmd, uint8_t size, const uint8_t *data, uint8_t checksum) {
 	return (calcChecksum(cmd, size, data) == checksum) ? true : false;
 }
 
+/************************************************************************/
+/* 데이터 처리 함수                                                     */
+/************************************************************************/
 uint8_t parseDataUint8(uint8_t data) {
 	return data;
 }

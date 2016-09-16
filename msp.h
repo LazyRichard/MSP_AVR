@@ -158,11 +158,12 @@ typedef struct _COMMANDDATA {
 extern void mspSendCmd(uint8_t);
 extern void mspSendCmdData(uint8_t, size_t, const uint8_t*);
 extern void mspAddQueue(size_t, const uint8_t*);
-extern void mspWrite(int (*)(char, FILE*));
 extern void mspReceiveCmd(char);
 extern CommandData mspRetrieveCMD();
+extern void mspWrite(int (*)(char, FILE*));
 extern int mspAvailable();
 
+// 데이터 처리 함수
 extern uint8_t parseDataUint8(uint8_t);
 extern int8_t parseDataInt8(uint8_t);
 extern uint16_t parseDataUint16(uint8_t, uint8_t);
