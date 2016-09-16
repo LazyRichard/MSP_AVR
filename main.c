@@ -36,6 +36,7 @@
 #define DEBUG_RECEIVERRC
 #define DEBUG_FCRCINFO
 #define DEBUG_GPSINFO
+#define DEBUG_ATTINFO
 //#define DEBUG_EXTINT
 
 /*
@@ -45,6 +46,14 @@ enum RC_CHANS {
 	ROLL, PITCH, YAW, THROTTLE,
 	AUX1, AUX2, AUX3 , AUX4 , AUX5 , AUX6 , AUX7,
 	AUX8, AUX9, AUX10, AUX11, AUX12, AUX13, AUX14
+};
+
+enum ATT {
+	ANGX, ANGY, HEADING
+};
+
+enum GPS {
+	LAT, LON
 };
 
 /*
@@ -62,17 +71,14 @@ typedef struct _MSP_RC_T {
 typedef struct _MSP_GPS_T {
 	uint8_t fix;
 	uint8_t num_sat;
-	uint32_t lat;
-	uint32_t lon;
+	uint32_t gpsData[2];
 	uint16_t altitude;
 	uint16_t speed;
 	uint16_t ground_course;
 } msp_gps_t;
 
 typedef struct _MSP_ATT_T {
-	uint16_t angx;
-	uint16_t angy;
-	uint16_t heading;
+	uint16_t attData[3];
 } msp_att_t;
 
 /*
@@ -278,6 +284,10 @@ int main() {
 
 			switch(cData.command) {
 			case MSP_RC:
+				for (uint8_t i = 0; i < cData.size; i++) {
+					MspRC_FC.rcData[i] = parseDataUint16(cData.data[2 * i], cData.data[(2 * i) + 1]);
+				}
+				/*
 				MspRC_FC.rcData[ROLL] = parseDataUint16(cData.data[0], cData.data[1]);
 				MspRC_FC.rcData[PITCH] = parseDataUint16(cData.data[2], cData.data[3]);
 				MspRC_FC.rcData[YAW] = parseDataUint16(cData.data[4], cData.data[5]);
@@ -296,6 +306,7 @@ int main() {
 				MspRC_FC.rcData[AUX12] = parseDataUint16(cData.data[30], cData.data[31]);
 				MspRC_FC.rcData[AUX13] = parseDataUint16(cData.data[32], cData.data[33]);
 				MspRC_FC.rcData[AUX14] = parseDataUint16(cData.data[34], cData.data[35]);
+				*/
 
 				#ifdef DEBUG_FCRCINFO
 				printf_P(PSTR("FC RC - "));
@@ -323,8 +334,8 @@ int main() {
 			case MSP_RAW_GPS:
 				MspGPS.fix = parseDataUint8(cData.data[0]);
 				MspGPS.num_sat = parseDataUint8(cData.data[1]);
-				MspGPS.lat = parseDataUint32(cData.data[2], cData.data[3], cData.data[4]);
-				MspGPS.lon = parseDataUint32(cData.data[5], cData.data[6], cData.data[7]);
+				MspGPS.gpsData[LAT] = parseDataUint32(cData.data[2], cData.data[3], cData.data[4]);
+				MspGPS.gpsData[LON] = parseDataUint32(cData.data[5], cData.data[6], cData.data[7]);
 				MspGPS.altitude = parseDataUint16(cData.data[8], cData.data[9]);
 				MspGPS.speed = parseDataUint16(cData.data[10], cData.data[11]);
 				MspGPS.ground_course = parseDataUint16(cData.data[12], cData.data[13]);
@@ -332,8 +343,20 @@ int main() {
 				#ifdef DEBUG_GPSINFO
 				printf_P(PSTR(" GPS Fix: ")); printf("%" PRIu8, MspGPS.fix);
 				printf_P(PSTR(" numSat: ")); printf("%" PRIu8, MspGPS.num_sat);
-				printf_P(PSTR(" lat: ")); printf("%" PRIu32, MspGPS.lat);
-				printf_P(PSTR(" lon: ")); printf("%" PRIu32, MspGPS.lon); printf_P(PSTR("\r\n"));
+				printf_P(PSTR(" lat: ")); printf("%" PRIu32, MspGPS.gpsData[LAT]);
+				printf_P(PSTR(" lon: ")); printf("%" PRIu32, MspGPS.gpsData[LON]); printf_P(PSTR("\r\n"));
+				#endif
+
+				break;
+			case MSP_ATTITUDE:
+				MspATT.attData[ANGX] = parseDataUint16(cData.data[0], cData.data[1]);
+				MspATT.attData[ANGY] = parseDataUint16(cData.data[2], cData.data[3]);
+				MspATT.attData[HEADING] = parseDataUint16(cData.data[4], cData.data[5]);
+
+				#ifdef DEBUG_ATTINFO
+				printf_P(PSTR(" ATT ANGX: ")); printf("%" PRIu16, MspATT.attData[ANGX]);
+				printf_P(PSTR(" ANGY: ")); printf("%", PRIu16, MspATT.attData[ANGY]);
+				printf_P(PSTR(" HEADING: ")); printf("%", PRIu16, MspATT.attData[HEADING]); printf_P(PSTR("\r\n"));
 				#endif
 
 				break;
@@ -363,12 +386,10 @@ int main() {
 			// mspSendCmd(MSP_RC);
 		}
 		
-
-		/*
-		if(timeDiff(&PrevTimeGPS, 75)) {
+		if(timeDiff(&PrevTimeGPS, 500)) {
 			mspSendCmd(MSP_RAW_GPS);
 		}
-		*/
+		
 		serialEvent();
 		serialEvent1();
 	}
@@ -398,6 +419,9 @@ void serialEvent() {
 		case 'f':
 			mspSendCmd(MSP_RC);
 			break;
+		case 'g':
+			mspSendCmd(MSP_ATTITUDE);
+			break;
 		default:
 			printf(" %c", ch);
 			break;	
@@ -417,7 +441,7 @@ void serialEvent1() {
 		switch (ch) {
 		default:
 			mspReceiveCmd(ch);
-			//printf(" %d", ch);
+
 			break;
 		}
 	}
