@@ -244,6 +244,9 @@ int main() {
 	
 	while(true) {
 		
+		/************************************************************************/
+		/* PRINT SYSTEM STATUS                                                  */
+		/************************************************************************/
 		if (timeDiff(&PrevTimeDebug, 1000)) {
 			printf_P(PSTR("SystemStatus "));
 			printf("%lu", CurrTime);
@@ -258,6 +261,9 @@ int main() {
 			#endif
 		}
 
+		/************************************************************************/
+		/* PROCESSING RC DATA FROM RECEIVER                                     */
+		/************************************************************************/
 		for(uint8_t i = 0; i < NUM_CH; i++) {
 			if(FLAG_ExtIntReceivedPWM[i]) {
 				FLAG_ExtIntReceivedPWM[i] = false;
@@ -279,6 +285,9 @@ int main() {
 		// write msp command to usart1
 		mspWrite(usartTxCharCh1);
 
+		/************************************************************************/
+		/* PROCESSING DATA FROM FC                                              */
+		/************************************************************************/
 		if(mspAvailable()) {
 			cData = mspRetrieveCMD();
 
@@ -373,7 +382,9 @@ int main() {
 			}
 		}
 
-		
+		/************************************************************************/
+		/* WRITE RC DATA                                                        */
+		/************************************************************************/
 		if(timeDiff(&PrevTimeRC, 50)) {
 			uint8_t rcData[] = {RawRC[ROLL], RawRC[ROLL] >> 8, RawRC[PITCH], RawRC[PITCH] >> 8,
 							    RawRC[THROTTLE], RawRC[THROTTLE] >> 8, RawRC[YAW], RawRC[YAW] >> 8,
@@ -386,6 +397,9 @@ int main() {
 			// mspSendCmd(MSP_RC);
 		}
 		
+		/************************************************************************/
+		/* REQUEST GPS DATA                                                     */
+		/************************************************************************/
 		if(timeDiff(&PrevTimeGPS, 500)) {
 			mspSendCmd(MSP_RAW_GPS);
 		}
