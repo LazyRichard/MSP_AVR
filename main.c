@@ -25,6 +25,10 @@
 #define TCNT2_BASE_10US 0xEC // Clk/8
 #define TCNT2_BASE_1MS 0xF0	 // Clk/1024
 
+#define MAX_TIME_COUNT F_CPU >> 1
+
+#define SERIAL_RX_BUFFER_SIZE 64
+
 /*
  * 디버그 관련
  */
@@ -32,19 +36,15 @@
 #define DEBUG_RECEIVERRC
 #define DEBUG_FCRCINFO
 #define DEBUG_GPSINFO
+//#define DEBUG_EXTINT
 
 /*
  * Enum
  */
 enum RC_CHANS {
-	ROLL     = 0,
-	PITCH    = 1,
-	YAW      = 2,
-	THROTTLE = 3,
-	AUX1     = 4,
-	AUX2     = 5,
-	AUX3     = 6,
-	AUX4     = 7
+	ROLL, PITCH, YAW, THROTTLE,
+	AUX1, AUX2, AUX3 , AUX4 , AUX5 , AUX6 , AUX7,
+	AUX8, AUX9, AUX10, AUX11, AUX12, AUX13, AUX14
 };
 
 /*
@@ -56,14 +56,7 @@ const uint8_t TCNT2_Value = TCNT2_BASE_1MS;
  * 전역 구조체
  */
 typedef struct _MSP_RC_T {
-	uint16_t roll;
-	uint16_t pitch;
-	uint16_t yaw;
-	uint16_t throttle;
-	uint16_t aux1;
-	uint16_t aux2;
-	uint16_t aux3;
-	uint16_t aux4;
+	uint16_t rcData[18];
 } msp_rc_t;
 
 typedef struct _MSP_GPS_T {
@@ -92,14 +85,8 @@ volatile bool FLAG_ExtIntReceivedPWM[NUM_CH];
 // MSP 데이터 관련
 //                   ROLL  PITCH YAW  THRO  AUX1  AUX2  AUX3  AUX4
 uint16_t RawRC[8] = {1500, 1500, 1500, 880, 1500, 1500, 1500, 1500};
-msp_rc_t MspRC_FC = { .roll     = 1500,
-					  .pitch    = 1500,
-					  .yaw      = 1500,
-					  .throttle = 880,
-					  .aux1     = 1500,
-					  .aux2     = 1500,
-					  .aux3     = 1500,
-					  .aux4     = 1500 };
+msp_rc_t MspRC_FC;
+msp_rc_t MspRC_MCU;
 msp_gps_t MspGPS;
 msp_att_t MspATT;
 
@@ -116,9 +103,22 @@ uint16_t ExtIntRisingTCNT1[NUM_CH];
 uint16_t ExtIntFallingTCNT1[NUM_CH];
 
 // USART 관련
-volatile bool FLAG_SerialReceived[2];
+typedef struct _hardwareSerial_t {
+	uint8_t _rx_buffer[SERIAL_RX_BUFFER_SIZE];
 
-unsigned char SerialChar[2];
+	uint8_t _rx_buffer_head;
+	uint8_t _rx_buffer_tail;
+} HardwareSerial_t;
+
+HardwareSerial_t HwSerial0 = {
+	._rx_buffer_head = 0,
+	._rx_buffer_tail = 0,
+};
+
+HardwareSerial_t HwSerial1 = {
+	._rx_buffer_head = 0,
+	._rx_buffer_tail = 0,
+};
 
 // MSP 관련
 CommandData cData;
@@ -126,12 +126,13 @@ CommandData cData;
 /*
  * 함수 선언
  */
-int usartRxCharCh0();
 int usartTxCharCh0(char, FILE*);
-int usartRxCharCh1();
 int usartTxCharCh1(char, FILE*);
 
 bool timeDiff(unsigned long*, unsigned long);
+
+int serialAvailable(const HardwareSerial_t*);
+int serialRead(HardwareSerial_t*);
 
 void serialEvent();
 void serialEvent1();
@@ -140,14 +141,12 @@ void serialEvent1();
  * 파일 스트림
  */
 FILE *fpStdio;
-FILE *fpFC;
 
 void setup() {
 	/*
 	 * 스트림 할당
 	 */
-	fpStdio = fdevopen(usartTxCharCh0, usartRxCharCh0); // stdout, stdin, stderr
-	fpFC = fdevopen(usartTxCharCh1, usartRxCharCh1);
+	fpStdio = fdevopen(usartTxCharCh0, NULL); // stdout, stdin, stderr
 
 	/*
 	 * Timer/Counter 2 1ms (system time)
@@ -162,36 +161,34 @@ void setup() {
 	 * 16bit Timer/Counter 1 1us w/o interrupt
 	 */
 	TCCR1B |= (1 << CS11);   // Clk / 8
-	//TIMSK |= (1 << TOIE1); // no interrupt
+	//TIMSK |= (1 << TOIE1); // block interrupt for T/C1
 
 	/*
 	 * Serial 0
-	 */ 
-	UCSR0A = 0x00;
-	UCSR0B |= (1 << RXCIE0) | // Grant RX complete interrupt
-			  (1 << RXEN0) |  // RX/TX enable
-			  (1 << TXEN0);
-	UCSR0C |= (1 << UCSZ00) | // 8bit
-			  (1 << UCSZ01);
-	//UBRR0H = 0x00;			  // Baudrate: 9,600
-	//UBRR0L = 0x67;
-	UBRR0H = 0x00;			  // Baudrate: 115,200
-	UBRR0L = 0x08;
-	
-	DDRE &= ~(1 << DDE0);
-	DDRE |= (1 << DDE1);
+	 */
+	 UCSR0A |= (1 << U2X);    // Double the USARTn transmission speed
+	 UCSR0B |= (1 << RXCIE) | // Grant RX complete interrupt
+			   (1 << RXEN) |  // RX/TX enable
+			   (1 << TXEN);
+	 UCSR0C |= (1 << UCSZ00) | // 8bit
+			   (1 << UCSZ01);
+	 UBRR0H = 0x00;			   // Baudrate: 38,400
+	 UBRR0L = 0x33;
+	 
+	 DDRE &= ~(1 << DDE0);
+	 DDRE |= (1 << DDE1);
 
 	/*
 	 * Serial 1
 	 */
-	UCSR1A = 0x00;
-	UCSR1B |= (1 << RXCIE1) | // Grant RX complete interrupt
-			  (1 << RXEN1) |  // RX/TX enable
-			  (1 << TXEN1);
+	UCSR1A |= (1 << U2X);	  // Double the USARTn transmission speed
+	UCSR1B |= (1 << RXCIE) |  // Grant RX complete interrupt
+			  (1 << RXEN) |   // RX/TX enable
+			  (1 << TXEN);
 	UCSR1C |= (1 << UCSZ10) | // 8bit
 			  (1 << UCSZ11);
-	UBRR1H = 0x00;		      // Baudrate: 115,200
-	UBRR1L = 0x08;
+	UBRR1H = 0x00;		      // Baudrate: 38,400
+	UBRR1L = 0x33;
 
 	DDRD &= ~(1 << DDD2);
 	DDRD |= (1 << DDD3);
@@ -261,14 +258,14 @@ int main() {
 				int16_t diffExtIntTCNT1 = ExtIntFallingTCNT1[i] - ExtIntRisingTCNT1[i];
 
 				// 동기를 맞추지 못한 경우
-				if (diffExtIntTCNT1 > 4000) {
+				if (diffExtIntTCNT1 > 5000) {
 					continue;
 				// 순방향
 				} else if (diffExtIntTCNT1 > 0) {
-					RawRC[i] = diffExtIntTCNT1 - 1500;
+					RawRC[i] = diffExtIntTCNT1 / 2;
 				// 역방향
 				} else {
-					RawRC[i] = (0xFFFF + diffExtIntTCNT1) - 1500;
+					RawRC[i] = (0xFFFF + diffExtIntTCNT1) / 2;
 				}
 			}
 		}
@@ -281,25 +278,45 @@ int main() {
 
 			switch(cData.command) {
 			case MSP_RC:
-				MspRC_FC.roll = parseDataUint16(cData.data[0], cData.data[1]);
-				MspRC_FC.pitch = parseDataUint16(cData.data[2], cData.data[3]);
-				MspRC_FC.yaw = parseDataUint16(cData.data[4], cData.data[5]);
-				MspRC_FC.throttle = parseDataUint16(cData.data[6], cData.data[7]);
-				MspRC_FC.aux1 = parseDataUint16(cData.data[8], cData.data[9]);
-				MspRC_FC.aux2 = parseDataUint16(cData.data[10], cData.data[11]);
-				MspRC_FC.aux3 = parseDataUint16(cData.data[12], cData.data[13]);
-				MspRC_FC.aux4 = parseDataUint16(cData.data[14], cData.data[15]);
+				MspRC_FC.rcData[ROLL] = parseDataUint16(cData.data[0], cData.data[1]);
+				MspRC_FC.rcData[PITCH] = parseDataUint16(cData.data[2], cData.data[3]);
+				MspRC_FC.rcData[YAW] = parseDataUint16(cData.data[4], cData.data[5]);
+				MspRC_FC.rcData[THROTTLE] = parseDataUint16(cData.data[6], cData.data[7]);
+				MspRC_FC.rcData[AUX1] = parseDataUint16(cData.data[8], cData.data[9]);
+				MspRC_FC.rcData[AUX2] = parseDataUint16(cData.data[10], cData.data[11]);
+				MspRC_FC.rcData[AUX3] = parseDataUint16(cData.data[12], cData.data[13]);
+				MspRC_FC.rcData[AUX4] = parseDataUint16(cData.data[14], cData.data[15]);
+				MspRC_FC.rcData[AUX5] = parseDataUint16(cData.data[16], cData.data[17]);
+				MspRC_FC.rcData[AUX6] = parseDataUint16(cData.data[18], cData.data[19]);
+				MspRC_FC.rcData[AUX7] = parseDataUint16(cData.data[20], cData.data[21]);
+				MspRC_FC.rcData[AUX8] = parseDataUint16(cData.data[22], cData.data[23]);
+				MspRC_FC.rcData[AUX9] = parseDataUint16(cData.data[24], cData.data[25]);
+				MspRC_FC.rcData[AUX10] = parseDataUint16(cData.data[26], cData.data[27]);
+				MspRC_FC.rcData[AUX11] = parseDataUint16(cData.data[28], cData.data[29]);
+				MspRC_FC.rcData[AUX12] = parseDataUint16(cData.data[30], cData.data[31]);
+				MspRC_FC.rcData[AUX13] = parseDataUint16(cData.data[32], cData.data[33]);
+				MspRC_FC.rcData[AUX14] = parseDataUint16(cData.data[34], cData.data[35]);
 
 				#ifdef DEBUG_FCRCINFO
 				printf_P(PSTR("FC RC - "));
-				printf_P(PSTR(" R: ")); printf("%" PRIu16, MspRC_FC.roll);
-				printf_P(PSTR(" P: ")); printf("%" PRIu16, MspRC_FC.pitch);
-				printf_P(PSTR(" Y: ")); printf("%" PRIu16, MspRC_FC.yaw);
-				printf_P(PSTR(" T: ")); printf("%" PRIu16, MspRC_FC.throttle);
-				printf_P(PSTR(" A1: ")); printf("%" PRIu16, MspRC_FC.aux1);
-				printf_P(PSTR(" A2: ")); printf("%" PRIu16, MspRC_FC.aux2);
-				printf_P(PSTR(" A3: ")); printf("%" PRIu16, MspRC_FC.aux3);
-				printf_P(PSTR(" A4: ")); printf("%" PRIu16, MspRC_FC.aux4); printf_P(PSTR("\r\n"));
+				printf_P(PSTR(" R: ")); printf("%" PRIu16, MspRC_FC.rcData[ROLL]);
+				printf_P(PSTR(" P: ")); printf("%" PRIu16, MspRC_FC.rcData[PITCH]);
+				printf_P(PSTR(" Y: ")); printf("%" PRIu16, MspRC_FC.rcData[YAW]);
+				printf_P(PSTR(" T: ")); printf("%" PRIu16, MspRC_FC.rcData[THROTTLE]);
+				printf_P(PSTR(" A1: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX1]);
+				printf_P(PSTR(" A2: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX2]);
+				printf_P(PSTR(" A3: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX3]);
+				printf_P(PSTR(" A4: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX4]); 
+				printf_P(PSTR(" A5: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX5]); printf_P(PSTR("\r\n"));
+				printf_P(PSTR(" A6: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX6]);
+				printf_P(PSTR(" A7: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX7]);
+				printf_P(PSTR(" A8: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX8]);
+				printf_P(PSTR(" A9: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX9]);
+				printf_P(PSTR(" A10: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX10]);
+				printf_P(PSTR(" A11: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX11]);
+				printf_P(PSTR(" A12: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX12]);
+				printf_P(PSTR(" A13: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX13]);
+				printf_P(PSTR(" A14: ")); printf("%" PRIu16, MspRC_FC.rcData[AUX14]); printf_P(PSTR("\r\n"));
 				#endif
 
 				break;
@@ -333,22 +350,25 @@ int main() {
 			}
 		}
 
+		
 		if(timeDiff(&PrevTimeRC, 50)) {
 			uint8_t rcData[] = {RawRC[ROLL], RawRC[ROLL] >> 8, RawRC[PITCH], RawRC[PITCH] >> 8,
-							    RawRC[YAW], RawRC[YAW] >> 8, RawRC[AUX1], RawRC[AUX1] >> 8,
-								RawRC[AUX2], RawRC[AUX2] >> 8, RawRC[AUX3], RawRC[AUX3] >> 8,
-								RawRC[AUX4], RawRC[AUX4] >> 8 };
+							    RawRC[THROTTLE], RawRC[THROTTLE] >> 8, RawRC[YAW], RawRC[YAW] >> 8,
+								RawRC[AUX1], RawRC[AUX1] >> 8, RawRC[AUX2], RawRC[AUX2] >> 8,
+								RawRC[AUX3], RawRC[AUX3] >> 8, RawRC[AUX4], RawRC[AUX4] >> 8 };
 
 			// Apply receiver RC to FC
 			mspSendCmdData(MSP_SET_RAW_RC,sizeof(rcData) / sizeof(*rcData), rcData);
 			// Request RC information from FC
-			mspSendCmd(MSP_RC);
+			// mspSendCmd(MSP_RC);
 		}
+		
 
+		/*
 		if(timeDiff(&PrevTimeGPS, 75)) {
 			mspSendCmd(MSP_RAW_GPS);
 		}
-
+		*/
 		serialEvent();
 		serialEvent1();
 	}
@@ -360,10 +380,12 @@ int main() {
  * @brief Serial event from debug console
  */
 void serialEvent() {
-	if(FLAG_SerialReceived[0]) {
-		FLAG_SerialReceived[0] = false;
+	char ch;
 
-		switch(SerialChar[0]) {
+	if (serialAvailable(&HwSerial0)) {
+		ch = serialRead(&HwSerial0);
+
+		switch (ch) {
 		case 'a':
 			mspSendCmd(MSP_API_VERSION);
 			break;
@@ -373,9 +395,12 @@ void serialEvent() {
 		case 'd':
 			mspSendCmd(MSP_FC_VERSION);
 			break;
-		default:
-			printf("%c", SerialChar[0]);
+		case 'f':
+			mspSendCmd(MSP_RC);
 			break;
+		default:
+			printf(" %c", ch);
+			break;	
 		}
 	}
 }
@@ -384,14 +409,15 @@ void serialEvent() {
  * @brief Serial event from msp
  */
 void serialEvent1() {
-	if(FLAG_SerialReceived[1]) {
-		FLAG_SerialReceived[1] = false;
+	char ch;
 
+	if (serialAvailable(&HwSerial1)) {
+		ch = serialRead(&HwSerial1);
 
-		switch(SerialChar[1]) {
+		switch (ch) {
 		default:
-			mspReceiveCmd(SerialChar[1]);
-			printf("%c", SerialChar[1]); printf(".");
+			mspReceiveCmd(ch);
+			//printf(" %d", ch);
 			break;
 		}
 	}
@@ -409,26 +435,50 @@ ISR(TIMER2_OVF_vect) {
  * @brief USART0 RX complete ISR
  */
 ISR(USART0_RX_vect) {
-	FLAG_SerialReceived[0] = true;
+	// If no parity error
+	if (!(UCSR0A & (1 << UPE)))
+	{
+		unsigned char c = UDR0;
 
-	SerialChar[0] = usartRxCharCh0();
+		uint8_t i = (HwSerial0._rx_buffer_head + 1) % SERIAL_RX_BUFFER_SIZE;
+
+		if (i != HwSerial0._rx_buffer_tail) {
+			HwSerial0._rx_buffer[HwSerial0._rx_buffer_head] = c;
+			HwSerial0._rx_buffer_head = i;
+		}
+		} else {
+		UDR0;
+	}
 }
 
 /**
  * @brief USART1 RX complete ISR
  */
  ISR(USART1_RX_vect) {
-	 FLAG_SerialReceived[1] = true;
+	// If no parity error
+	if (!(UCSR1A & (1 << UPE)))
+	{
+		unsigned char c = UDR1;
 
-	SerialChar[1] = usartRxCharCh0();
+		uint8_t i = (HwSerial1._rx_buffer_head + 1) % SERIAL_RX_BUFFER_SIZE;
 
-	mspReceiveCmd(SerialChar[1]);
+		if (i != HwSerial1._rx_buffer_tail) {
+			HwSerial1._rx_buffer[HwSerial1._rx_buffer_head] = c;
+			HwSerial1._rx_buffer_head = i;
+		}
+	} else {
+		UDR1;
+	}
  }
  
 /**
  * @brief External interrupt 0 ISR
  */
 ISR(INT0_vect) {
+	#ifdef DEBUG_EXTINT
+	printf_P(PSTR("ExtInterrupt0\r\n"));
+	#endif
+
 	const uint8_t index = 0;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -452,6 +502,10 @@ ISR(INT0_vect) {
  * @brief External interrupt 1 ISR
  */
 ISR(INT1_vect) {
+	#ifdef DEBUG_EXTINT
+	printf_P(PSTR("ExtInterrupt1\r\n"));
+	#endif
+
 	const uint8_t index = 1;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -475,6 +529,10 @@ ISR(INT1_vect) {
  * @brief External interrupt 4 ISR
  */
 ISR(INT4_vect) {
+	#ifdef DEBUG_EXTINT
+	printf_P(PSTR("ExtInterrupt4\r\n"));
+	#endif
+
 	const uint8_t index = 2;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -498,6 +556,10 @@ ISR(INT4_vect) {
  * @brief External interrupt 5 ISR
  */
 ISR(INT5_vect) {
+	#ifdef DEBUG_EXTINT
+	printf_P(PSTR("ExtInterrupt5\r\n"));
+	#endif
+
 	const uint8_t index = 3;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -521,6 +583,10 @@ ISR(INT5_vect) {
  * @brief External interrupt 6 ISR
  */
 ISR(INT6_vect) {
+	#ifdef DEBUG_EXTINT
+	printf_P(PSTR("ExtInterrupt6\r\n"));
+	#endif
+
 	const uint8_t index = 4;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -543,7 +609,11 @@ ISR(INT6_vect) {
 /**
  * @brief External interrupt 7 ISR
  */
-ISR(INT7_vect) {	
+ISR(INT7_vect) {
+	#ifdef DEBUG_EXTINT
+	printf_P(PSTR("ExtInterrupt7\r\n"));
+	#endif
+
 	const uint8_t index = 5;
 
 	if(!FLAG_ExtIntRisingEdge[index]) {
@@ -563,55 +633,60 @@ ISR(INT7_vect) {
 	}
 }
 
-
-/**
- * @brief USART0 read char
- */
-int usartRxCharCh0() {
-	while(!(UCSR0A & (1 << RXC0)));
-	
-	UCSR0A &= ~(1 << RXC0);
-
-	return UDR0;
-}
-
 /**
  * @brief USART0 write char
  */
 int usartTxCharCh0(char ch, FILE *fp) {
-	while (!(UCSR0A & (1 << UDRE0))) {
-		// Write timeout
-		if(timeDiff(&PrevTimeUsartWriteCH0, 500))
-			break;
+	uint32_t count = 0;
+
+	while (!(UCSR0A & (1 << UDRE))) {
+		// write timeout
+		if (count++ > MAX_TIME_COUNT)
+		return -1;
 	}
-	
+
 	UDR0 = ch;
 
 	return 0;
 }
 
 /**
- * @brief USART1 read char
- */
-int usartRxCharCh1() {
-	while(!(UCSR1A & (1 << RXC1)));
-
-	return UDR1;
-}
-
-/**
  * @brief USART1 write char
  */
 int usartTxCharCh1(char ch, FILE *fp) {
-	while (!(UCSR1A & (1 << UDRE1))) {
-		// Write timeout
-		if(timeDiff(&PrevTimeUsartWriteCH1, 500))
-			break;
+	uint32_t count = 0;
+
+	while (!(UCSR1A & (1 << UDRE))) {
+		// write timeout
+		if (count++ > MAX_TIME_COUNT)
+		return -1;
 	}
-	
+
 	UDR1 = ch;
 
 	return 0;
+}
+
+/**
+ * @brief 버퍼에 읽을 문자가 있는지 여부 확인
+ */
+int serialAvailable(const HardwareSerial_t *hwSerial) {
+	return ((unsigned int)(SERIAL_RX_BUFFER_SIZE + hwSerial->_rx_buffer_head - hwSerial->_rx_buffer_tail)) % SERIAL_RX_BUFFER_SIZE;
+}
+
+/**
+ * @brief 버퍼에 있는 문자 읽음
+ */
+int serialRead(HardwareSerial_t *hwSerial) {
+	if(hwSerial->_rx_buffer_head == hwSerial->_rx_buffer_tail) {
+		return -1;
+	} else {
+		unsigned char c = hwSerial->_rx_buffer[hwSerial->_rx_buffer_tail];
+
+		hwSerial->_rx_buffer_tail = (hwSerial->_rx_buffer_tail + 1) % SERIAL_RX_BUFFER_SIZE;
+
+		return c;
+	}
 }
 
 /**
