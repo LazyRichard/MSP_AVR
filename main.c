@@ -29,12 +29,18 @@
 
 #define SERIAL_RX_BUFFER_SIZE 64
 
+#define RC_MIN 1000
+#define RC_MAX 2000
+#define RC_MID 1500
+
 /*
  * 디버그 관련
  */
 //#define DEBUG_SYSTEMSTATUS
 #define DEBUG_RECEIVERRC
+#define DEBUG_AVRFLIGHTRC
 #define DEBUG_FCRCINFO
+#define DEBUG_WRITERC
 #define DEBUG_GPSINFO
 #define DEBUG_ATTINFO
 //#define DEBUG_EXTINT
@@ -90,11 +96,16 @@ volatile bool FLAG_ExtIntReceivedPWM[NUM_CH];
 
 // MSP 데이터 관련
 //                   ROLL  PITCH YAW  THRO  AUX1  AUX2  AUX3  AUX4
-uint16_t RawRC[8] = {1500, 1500, 1500, 880, 1500, 1500, 1500, 1500};
+//uint16_t RawRC[8] = {1500, 1500, 1500, 880, 1500, 1500, 1500, 1500};
 msp_rc_t MspRC_FC;
 msp_rc_t MspRC_MCU;
 msp_gps_t MspGPS;
 msp_att_t MspATT;
+
+// AVR Flight 관련
+volatile bool AvrFlight = false;
+volatile uint8_t RcOverride;
+msp_rc_t MspRC_AvrFlight;
 
 // 시간 관련
 unsigned long CurrTime = 0;
@@ -136,12 +147,19 @@ int usartTxCharCh0(char, FILE*);
 int usartTxCharCh1(char, FILE*);
 
 bool timeDiff(unsigned long*, unsigned long);
+bool getABit(uint8_t x, int n);
 
 int serialAvailable(const HardwareSerial_t*);
 int serialRead(HardwareSerial_t*);
 
 void serialEvent();
 void serialEvent1();
+
+void avrFlight_arm();
+void avrFlight_disarm();
+bool avrFlight_status();
+
+void writeRC(msp_rc_t*, msp_rc_t*, uint8_t);
 
 /*
  * 파일 스트림
@@ -250,14 +268,37 @@ int main() {
 		if (timeDiff(&PrevTimeDebug, 1000)) {
 			printf_P(PSTR("SystemStatus "));
 			printf("%lu", CurrTime);
-			printf_P(PSTR("=====\r\n"));
+			printf_P(PSTR("===== AVRFlight: "));
+			printf("%d\r\n", avrFlight_status());
 			#ifdef DEBUG_RECEIVERRC
-			printf_P(PSTR(" R: ")); printf("%" PRIu16, RawRC[ROLL]);
-			printf_P(PSTR(" P: ")); printf("%" PRIu16, RawRC[PITCH]);
-			printf_P(PSTR(" Y: ")); printf("%" PRIu16, RawRC[YAW]);
-			printf_P(PSTR(" T: ")); printf("%" PRIu16, RawRC[THROTTLE]);
-			printf_P(PSTR(" A1: ")); printf("%" PRIu16, RawRC[AUX1]);
-			printf_P(PSTR(" A2: ")); printf("%" PRIu16, RawRC[AUX2]); printf_P(PSTR("\r\n"));
+			printf_P(PSTR(" R: ")); printf("%" PRIu16, MspRC_MCU.rcData[ROLL]);
+			printf_P(PSTR(" P: ")); printf("%" PRIu16, MspRC_MCU.rcData[PITCH]);
+			printf_P(PSTR(" Y: ")); printf("%" PRIu16, MspRC_MCU.rcData[YAW]);
+			printf_P(PSTR(" T: ")); printf("%" PRIu16, MspRC_MCU.rcData[THROTTLE]);
+			printf_P(PSTR(" A1: ")); printf("%" PRIu16, MspRC_MCU.rcData[AUX1]);
+			printf_P(PSTR(" A2: ")); printf("%" PRIu16, MspRC_MCU.rcData[AUX2]); printf_P(PSTR("\r\n"));
+			#endif
+
+			#ifdef DEBUG_AVRFLIGHTRC
+			printf_P(PSTR("AvrFlight RC - "));
+			printf_P(PSTR(" R: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[ROLL]);
+			printf_P(PSTR(" P: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[PITCH]);
+			printf_P(PSTR(" Y: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[YAW]);
+			printf_P(PSTR(" T: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[THROTTLE]);
+			printf_P(PSTR(" A1: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX1]);
+			printf_P(PSTR(" A2: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX2]);
+			printf_P(PSTR(" A3: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX3]);
+			printf_P(PSTR(" A4: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX4]);
+			printf_P(PSTR(" A5: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX5]); printf_P(PSTR("\r\n"));
+			printf_P(PSTR(" A6: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX6]);
+			printf_P(PSTR(" A7: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX7]);
+			printf_P(PSTR(" A8: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX8]);
+			printf_P(PSTR(" A9: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX9]);
+			printf_P(PSTR(" A10: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX10]);
+			printf_P(PSTR(" A11: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX11]);
+			printf_P(PSTR(" A12: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX12]);
+			printf_P(PSTR(" A13: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX13]);
+			printf_P(PSTR(" A14: ")); printf("%" PRIu16, MspRC_AvrFlight.rcData[AUX14]); printf_P(PSTR("\r\n"));
 			#endif
 		}
 
@@ -274,10 +315,10 @@ int main() {
 					continue;
 				// 순방향
 				} else if (diffExtIntTCNT1 > 0) {
-					RawRC[i] = diffExtIntTCNT1 / 2;
+					MspRC_MCU.rcData[i] = diffExtIntTCNT1 / 2;
 				// 역방향
 				} else {
-					RawRC[i] = (0xFFFF + diffExtIntTCNT1) / 2;
+					MspRC_MCU.rcData[i] = (0xFFFF + diffExtIntTCNT1) / 2;
 				}
 			}
 		}
@@ -369,6 +410,8 @@ int main() {
 				#endif
 
 				break;
+			case MSP_SET_RAW_RC:
+				break;
 			default:
 				printf_P(PSTR("CMD: ")); printf("%d", cData.command);
 				printf_P(PSTR(" size: ")); printf("%d", cData.size);
@@ -383,16 +426,29 @@ int main() {
 		}
 
 		/************************************************************************/
+		/* AVR Flight                                                           */
+		/************************************************************************/
+		if (MspRC_MCU.rcData[AUX2] > RC_MID)
+		{
+			avrFlight_arm();
+
+			RcOverride = //(1 << ROLL) |
+						 (1 << PITCH);
+						 //(1 << THROTTLE) |
+						 //(1 << YAW) |
+						 //(1 << AUX1) |
+						 //(1 << AUX3) |
+						 //(1 << AUX4);
+
+		} else {
+			avrFlight_disarm();
+		}
+
+		/************************************************************************/
 		/* WRITE RC DATA                                                        */
 		/************************************************************************/
-		if(timeDiff(&PrevTimeRC, 50)) {
-			uint8_t rcData[] = {RawRC[ROLL], RawRC[ROLL] >> 8, RawRC[PITCH], RawRC[PITCH] >> 8,
-							    RawRC[THROTTLE], RawRC[THROTTLE] >> 8, RawRC[YAW], RawRC[YAW] >> 8,
-								RawRC[AUX1], RawRC[AUX1] >> 8, RawRC[AUX2], RawRC[AUX2] >> 8,
-								RawRC[AUX3], RawRC[AUX3] >> 8, RawRC[AUX4], RawRC[AUX4] >> 8 };
-
-			// Apply receiver RC to FC
-			mspSendCmdData(MSP_SET_RAW_RC,sizeof(rcData) / sizeof(*rcData), rcData);
+		if(timeDiff(&PrevTimeRC, 75)) {
+			writeRC(&MspRC_MCU, &MspRC_AvrFlight, RcOverride);
 			// Request RC information from FC
 			// mspSendCmd(MSP_RC);
 		}
@@ -727,6 +783,68 @@ int serialRead(HardwareSerial_t *hwSerial) {
 	}
 }
 
+void writeRC(msp_rc_t* mcu_rc, msp_rc_t* avrFlight_rc, uint8_t rcOverride) {
+	/*uint8_t rcData[36];
+
+	for (int i = 0; i < 8; i++) {
+		rcData[2 * i] = (avrFlight_status() && (rcOverride & (1 << ROLL))) ? (mcu_rc->rcData[i]) : (avrFlight_rc->rcData[i]);
+		rcData[2 * i] = (avrFlight_status() && (rcOverride & (1 << ROLL))) ? (mcu_rc->rcData[i] >> 8) : (avrFlight_rc->rcData[i] >> 8);
+	} */
+	bool avrFlightStatus = avrFlight_status();
+
+	uint8_t rcData[] = {
+		(avrFlightStatus && getABit(rcOverride, ROLL)) ? (avrFlight_rc->rcData[ROLL]) : (mcu_rc->rcData[ROLL]),
+		(avrFlightStatus && getABit(rcOverride, ROLL)) ? (avrFlight_rc->rcData[ROLL] >> 8) : (mcu_rc->rcData[ROLL] >> 8),
+		(avrFlightStatus && getABit(rcOverride, PITCH)) ? (avrFlight_rc->rcData[PITCH]) : (mcu_rc->rcData[PITCH]),
+		(avrFlightStatus && getABit(rcOverride, PITCH)) ? (avrFlight_rc->rcData[PITCH] >> 8) : (mcu_rc->rcData[PITCH] >> 8),
+		(avrFlightStatus && getABit(rcOverride, THROTTLE)) ? (avrFlight_rc->rcData[THROTTLE]) : (mcu_rc->rcData[THROTTLE]),
+		(avrFlightStatus && getABit(rcOverride, THROTTLE)) ? (avrFlight_rc->rcData[THROTTLE] >> 8) : (mcu_rc->rcData[THROTTLE] >> 8),
+		(avrFlightStatus && getABit(rcOverride, YAW)) ? (avrFlight_rc->rcData[YAW]) : (mcu_rc->rcData[YAW]),
+		(avrFlightStatus && getABit(rcOverride, YAW)) ? (avrFlight_rc->rcData[YAW] >> 8) : (mcu_rc->rcData[YAW] >> 8),
+		(avrFlightStatus && getABit(rcOverride, AUX1)) ? (avrFlight_rc->rcData[AUX1]) : (mcu_rc->rcData[AUX1]),
+		(avrFlightStatus && getABit(rcOverride, AUX1)) ? (avrFlight_rc->rcData[AUX1] >> 8) : (mcu_rc->rcData[AUX1] >> 8),
+		(avrFlightStatus && getABit(rcOverride, AUX2)) ? (avrFlight_rc->rcData[AUX2]) : (mcu_rc->rcData[AUX2]),
+		(avrFlightStatus && getABit(rcOverride, AUX2)) ? (avrFlight_rc->rcData[AUX2] >> 8) : (mcu_rc->rcData[AUX2] >> 8),
+		(avrFlight_rc->rcData[AUX3]), (avrFlight_rc->rcData[AUX3] >> 8),
+		(avrFlight_rc->rcData[AUX4]), (avrFlight_rc->rcData[AUX4] >> 8),
+		(avrFlight_rc->rcData[AUX5]), (avrFlight_rc->rcData[AUX5] >> 8),
+		(avrFlight_rc->rcData[AUX6]), (avrFlight_rc->rcData[AUX6] >> 8),
+		(avrFlight_rc->rcData[AUX7]), (avrFlight_rc->rcData[AUX7] >> 8),
+		(avrFlight_rc->rcData[AUX8]), (avrFlight_rc->rcData[AUX8] >> 8),
+		(avrFlight_rc->rcData[AUX9]), (avrFlight_rc->rcData[AUX9] >> 8),
+		(avrFlight_rc->rcData[AUX10]), (avrFlight_rc->rcData[AUX10] >> 8),
+		(avrFlight_rc->rcData[AUX11]), (avrFlight_rc->rcData[AUX11] >> 8),
+		(avrFlight_rc->rcData[AUX12]), (avrFlight_rc->rcData[AUX12] >> 8),
+		(avrFlight_rc->rcData[AUX13]), (avrFlight_rc->rcData[AUX13] >> 8),
+		(avrFlight_rc->rcData[AUX14]), (avrFlight_rc->rcData[AUX14] >> 8)
+	};
+
+	#ifdef DEBUG_WRITERC
+	printf_P(PSTR(" WRITE RC - "));
+	for (uint8_t i = 0; i < cData.size; i++) {
+		printf("%d ", parseDataUint16(cData.data[2 * i], cData.data[(2 * i) + 1]));
+		MspRC_FC.rcData[i] = parseDataUint16(cData.data[2 * i], cData.data[(2 * i) + 1]);
+	}
+	#endif
+
+	mspSendCmdData(MSP_SET_RAW_RC, (sizeof(rcData) / sizeof(*rcData)), rcData);
+}
+
+void avrFlight_arm() {
+	AvrFlight = true;
+
+	// Clear all RC override bits for safety
+	RcOverride = 0;
+}
+
+void avrFlight_disarm() {
+	AvrFlight = false;
+}
+
+bool avrFlight_status() {
+	return AvrFlight;
+}
+
 /**
  * @brief 현재 시간과 이전 시간과의 차이를 비교해 원하는 시간 차가 나왔을 때,
  *        true를 반환함.
@@ -739,4 +857,8 @@ bool timeDiff(unsigned long *PrevTime, unsigned long desiredTime) {
 	}
 	
 	return false;
+}
+
+bool getABit(uint8_t x, int n) {
+	return ((x >> n) & 0x01);
 }
