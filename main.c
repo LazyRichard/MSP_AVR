@@ -28,6 +28,7 @@
 #define MAX_TIME_COUNT F_CPU >> 1
 
 #define SERIAL_RX_BUFFER_SIZE 64
+#define SERIAL_TX_BUFFER_SIZE 64
 
 #define RC_MIN 1000
 #define RC_MAX 2000
@@ -122,19 +123,26 @@ uint16_t ExtIntFallingTCNT1[NUM_CH];
 // USART 관련
 typedef struct _hardwareSerial_t {
 	uint8_t _rx_buffer[SERIAL_RX_BUFFER_SIZE];
+	uint8_t _tx_buffer[SERIAL_TX_BUFFER_SIZE];
 
 	uint8_t _rx_buffer_head;
 	uint8_t _rx_buffer_tail;
+	uint8_t _tx_buffer_head;
+	uint8_t _tx_buffer_tail;
 } HardwareSerial_t;
 
 HardwareSerial_t HwSerial0 = {
 	._rx_buffer_head = 0,
 	._rx_buffer_tail = 0,
+	._tx_buffer_head = 0,
+	._tx_buffer_tail = 0
 };
 
 HardwareSerial_t HwSerial1 = {
 	._rx_buffer_head = 0,
 	._rx_buffer_tail = 0,
+	._tx_buffer_head = 0,
+	._tx_buffer_tail = 0
 };
 
 // MSP 관련
@@ -546,6 +554,18 @@ ISR(USART0_RX_vect) {
 }
 
 /**
+ * @brief USART0 UDRE data register empty ISR
+ */
+ISR(USART0_UDRE_vect) {
+	uint8_t i = (HwSerial0._tx_buffer_tail + 1) % SERIAL_TX_BUFFER_SIZE;
+
+	if (i != HwSerial0._tx_buffer_head) {
+		UDR0 = HwSerial0._tx_buffer[HwSerial0._tx_buffer_tail];
+		HwSerial0._tx_buffer_tail = i;
+	}
+}
+
+/**
  * @brief USART1 RX complete ISR
  */
  ISR(USART1_RX_vect) {
@@ -564,6 +584,18 @@ ISR(USART0_RX_vect) {
 		UDR1;
 	}
  }
+
+ /**
+ * @brief USART1 UDRE data register empty ISR
+ */
+ISR(USART1_UDRE_vect) {
+	uint8_t i = (HwSerial1._tx_buffer_tail + 1) % SERIAL_TX_BUFFER_SIZE;
+
+	if (i != HwSerial1._tx_buffer_head) {
+		UDR0 = HwSerial1._tx_buffer[HwSerial1._tx_buffer_tail];
+		HwSerial1._tx_buffer_tail = i;
+	}
+}
  
 /**
  * @brief External interrupt 0 ISR
@@ -731,15 +763,9 @@ ISR(INT7_vect) {
  * @brief USART0 write char
  */
 int usartTxCharCh0(char ch, FILE *fp) {
-	uint32_t count = 0;
+	HwSerial0._tx_buffer[HwSerial0._tx_buffer_head] = ch;
 
-	while (!(UCSR0A & (1 << UDRE))) {
-		// write timeout
-		if (count++ > MAX_TIME_COUNT)
-		return -1;
-	}
-
-	UDR0 = ch;
+	HwSerial0._tx_buffer_head = (HwSerial0._tx_buffer_head + 1) % SERIAL_TX_BUFFER_SIZE;
 
 	return 0;
 }
@@ -748,15 +774,9 @@ int usartTxCharCh0(char ch, FILE *fp) {
  * @brief USART1 write char
  */
 int usartTxCharCh1(char ch, FILE *fp) {
-	uint32_t count = 0;
+	HwSerial0._tx_buffer[HwSerial0._tx_buffer_head] = ch;
 
-	while (!(UCSR1A & (1 << UDRE))) {
-		// write timeout
-		if (count++ > MAX_TIME_COUNT)
-		return -1;
-	}
-
-	UDR1 = ch;
+	HwSerial0._tx_buffer_head = (HwSerial0._tx_buffer_head + 1) % SERIAL_TX_BUFFER_SIZE;
 
 	return 0;
 }
