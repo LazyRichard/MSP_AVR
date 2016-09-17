@@ -167,12 +167,13 @@ void mspReceiveCmd(char ch) {
 		printf("%d\r\n", ch);
 		#endif
 
-		cData[cDataCursor].data[bufCursor++] = ch;
-		
-		if (bufCursor > cData[cDataCursor].size - 1)
+		if (bufCursor > cData[cDataCursor].size - 1) {
 			status = DATA;
+		} else {
+			cData[cDataCursor].data[bufCursor++] = ch;
+			break;
+		}
 		
-		break;
 	case DATA:
 		#if defined(DEBUG_MSP_INPUT) || defined(DEBUG_MSP_INPUT_SIMPLE)
 		printf_P(PSTR("MSPReceive DATA\r\n"));
@@ -190,15 +191,13 @@ void mspReceiveCmd(char ch) {
 			#endif
 
 			cDataCursor++;
-			
-			status = IDLE;
 		} else {
 			#if defined(DEBUG_MSP_INPUT) || defined(DEBUG_MSP_INPUT_SIMPLE)
 			printf_P(PSTR("MSPReceive Verify checksum failed\r\n"));
 			#endif
-
-			status = IDLE;
 		}
+
+		status = IDLE;
 	}
 }
 
