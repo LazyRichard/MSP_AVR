@@ -28,7 +28,6 @@
 #define MAX_TIME_COUNT F_CPU >> 1
 
 #define SERIAL_RX_BUFFER_SIZE 64
-#define SERIAL_TX_BUFFER_SIZE 64
 
 #define RC_MIN 1000
 #define RC_MAX 2000
@@ -41,7 +40,7 @@
 #define DEBUG_RECEIVERRC
 #define DEBUG_AVRFLIGHTRC
 #define DEBUG_FCRCINFO
-#define DEBUG_WRITERC
+//#define DEBUG_WRITERC
 #define DEBUG_GPSINFO
 #define DEBUG_ATTINFO
 //#define DEBUG_EXTINT
@@ -106,7 +105,10 @@ msp_att_t MspATT;
 // AVR Flight 관련
 volatile bool AvrFlight = false;
 volatile uint8_t RcOverride;
-msp_rc_t MspRC_AvrFlight;
+msp_rc_t MspRC_AvrFlight = {
+//             ROLL  PITCH YAW  THRO  AUX1  AUX2  AUX3  AUX4  AUX5  AUX6  AUX7  AUX8  AUX9  AUX10 AUX11 AUX12 AUX13 AUX14
+	.rcData = {1500, 1500, 1500, 800, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500}
+};
 
 // 시간 관련
 unsigned long CurrTime = 0;
@@ -123,26 +125,19 @@ uint16_t ExtIntFallingTCNT1[NUM_CH];
 // USART 관련
 typedef struct _hardwareSerial_t {
 	uint8_t _rx_buffer[SERIAL_RX_BUFFER_SIZE];
-	uint8_t _tx_buffer[SERIAL_TX_BUFFER_SIZE];
 
 	uint8_t _rx_buffer_head;
 	uint8_t _rx_buffer_tail;
-	uint8_t _tx_buffer_head;
-	uint8_t _tx_buffer_tail;
 } HardwareSerial_t;
 
 HardwareSerial_t HwSerial0 = {
 	._rx_buffer_head = 0,
 	._rx_buffer_tail = 0,
-	._tx_buffer_head = 0,
-	._tx_buffer_tail = 0
 };
 
 HardwareSerial_t HwSerial1 = {
 	._rx_buffer_head = 0,
 	._rx_buffer_tail = 0,
-	._tx_buffer_head = 0,
-	._tx_buffer_tail = 0
 };
 
 // MSP 관련
@@ -319,7 +314,7 @@ int main() {
 				int16_t diffExtIntTCNT1 = ExtIntFallingTCNT1[i] - ExtIntRisingTCNT1[i];
 
 				// 동기를 맞추지 못한 경우
-				if (diffExtIntTCNT1 > 5000) {
+				if (diffExtIntTCNT1 > 4000) {
 					continue;
 				// 순방향
 				} else if (diffExtIntTCNT1 > 0) {
@@ -345,26 +340,6 @@ int main() {
 				for (uint8_t i = 0; i < cData.size; i++) {
 					MspRC_FC.rcData[i] = parseDataUint16(cData.data[2 * i], cData.data[(2 * i) + 1]);
 				}
-				/*
-				MspRC_FC.rcData[ROLL] = parseDataUint16(cData.data[0], cData.data[1]);
-				MspRC_FC.rcData[PITCH] = parseDataUint16(cData.data[2], cData.data[3]);
-				MspRC_FC.rcData[YAW] = parseDataUint16(cData.data[4], cData.data[5]);
-				MspRC_FC.rcData[THROTTLE] = parseDataUint16(cData.data[6], cData.data[7]);
-				MspRC_FC.rcData[AUX1] = parseDataUint16(cData.data[8], cData.data[9]);
-				MspRC_FC.rcData[AUX2] = parseDataUint16(cData.data[10], cData.data[11]);
-				MspRC_FC.rcData[AUX3] = parseDataUint16(cData.data[12], cData.data[13]);
-				MspRC_FC.rcData[AUX4] = parseDataUint16(cData.data[14], cData.data[15]);
-				MspRC_FC.rcData[AUX5] = parseDataUint16(cData.data[16], cData.data[17]);
-				MspRC_FC.rcData[AUX6] = parseDataUint16(cData.data[18], cData.data[19]);
-				MspRC_FC.rcData[AUX7] = parseDataUint16(cData.data[20], cData.data[21]);
-				MspRC_FC.rcData[AUX8] = parseDataUint16(cData.data[22], cData.data[23]);
-				MspRC_FC.rcData[AUX9] = parseDataUint16(cData.data[24], cData.data[25]);
-				MspRC_FC.rcData[AUX10] = parseDataUint16(cData.data[26], cData.data[27]);
-				MspRC_FC.rcData[AUX11] = parseDataUint16(cData.data[28], cData.data[29]);
-				MspRC_FC.rcData[AUX12] = parseDataUint16(cData.data[30], cData.data[31]);
-				MspRC_FC.rcData[AUX13] = parseDataUint16(cData.data[32], cData.data[33]);
-				MspRC_FC.rcData[AUX14] = parseDataUint16(cData.data[34], cData.data[35]);
-				*/
 
 				#ifdef DEBUG_FCRCINFO
 				printf_P(PSTR("FC RC - "));
@@ -447,7 +422,6 @@ int main() {
 						 //(1 << AUX1) |
 						 //(1 << AUX3) |
 						 //(1 << AUX4);
-
 		} else {
 			avrFlight_disarm();
 		}
@@ -554,18 +528,6 @@ ISR(USART0_RX_vect) {
 }
 
 /**
- * @brief USART0 UDRE data register empty ISR
- */
-ISR(USART0_UDRE_vect) {
-	uint8_t i = (HwSerial0._tx_buffer_tail + 1) % SERIAL_TX_BUFFER_SIZE;
-
-	if (i != HwSerial0._tx_buffer_head) {
-		UDR0 = HwSerial0._tx_buffer[HwSerial0._tx_buffer_tail];
-		HwSerial0._tx_buffer_tail = i;
-	}
-}
-
-/**
  * @brief USART1 RX complete ISR
  */
  ISR(USART1_RX_vect) {
@@ -584,18 +546,6 @@ ISR(USART0_UDRE_vect) {
 		UDR1;
 	}
  }
-
- /**
- * @brief USART1 UDRE data register empty ISR
- */
-ISR(USART1_UDRE_vect) {
-	uint8_t i = (HwSerial1._tx_buffer_tail + 1) % SERIAL_TX_BUFFER_SIZE;
-
-	if (i != HwSerial1._tx_buffer_head) {
-		UDR0 = HwSerial1._tx_buffer[HwSerial1._tx_buffer_tail];
-		HwSerial1._tx_buffer_tail = i;
-	}
-}
  
 /**
  * @brief External interrupt 0 ISR
@@ -763,9 +713,15 @@ ISR(INT7_vect) {
  * @brief USART0 write char
  */
 int usartTxCharCh0(char ch, FILE *fp) {
-	HwSerial0._tx_buffer[HwSerial0._tx_buffer_head] = ch;
+	uint32_t count = 0;
 
-	HwSerial0._tx_buffer_head = (HwSerial0._tx_buffer_head + 1) % SERIAL_TX_BUFFER_SIZE;
+	while (!(UCSR0A & (1 << UDRE))) {
+		// write timeout
+		if (count++ > MAX_TIME_COUNT)
+		return -1;
+	}
+
+	UDR0 = ch;
 
 	return 0;
 }
@@ -774,9 +730,15 @@ int usartTxCharCh0(char ch, FILE *fp) {
  * @brief USART1 write char
  */
 int usartTxCharCh1(char ch, FILE *fp) {
-	HwSerial0._tx_buffer[HwSerial0._tx_buffer_head] = ch;
+	uint32_t count = 0;
 
-	HwSerial0._tx_buffer_head = (HwSerial0._tx_buffer_head + 1) % SERIAL_TX_BUFFER_SIZE;
+	while (!(UCSR1A & (1 << UDRE))) {
+		// write timeout
+		if (count++ > MAX_TIME_COUNT)
+		return -1;
+	}
+
+	UDR1 = ch;
 
 	return 0;
 }
@@ -841,10 +803,10 @@ void writeRC(msp_rc_t* mcu_rc, msp_rc_t* avrFlight_rc, uint8_t rcOverride) {
 
 	#ifdef DEBUG_WRITERC
 	printf_P(PSTR(" WRITE RC - "));
-	for (uint8_t i = 0; i < cData.size; i++) {
-		printf("%d ", parseDataUint16(cData.data[2 * i], cData.data[(2 * i) + 1]));
-		MspRC_FC.rcData[i] = parseDataUint16(cData.data[2 * i], cData.data[(2 * i) + 1]);
+	for (uint8_t i = 0; i < (sizeof(rcData) / sizeof(*rcData) / 2); i++) {
+		printf(" %d", parseDataUint16(rcData[2 * i], rcData[(2 * i) + 1]));
 	}
+	printf_P(PSTR("\r\n"));
 	#endif
 
 	mspSendCmdData(MSP_SET_RAW_RC, (sizeof(rcData) / sizeof(*rcData)), rcData);
